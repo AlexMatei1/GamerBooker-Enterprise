@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/*
+
+# Build output
+dist/
+build/
+out/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets - never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# Logs and local state
+*.log
+logs/
+npm-debug.log*
+.opencode/local/
+
+# Editor and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test and tool caches
+.cache/
+.tmp/
+tmp/
+*.tmp
+
+# Prisma local artifacts
+prisma/dev.db
+prisma/*.db

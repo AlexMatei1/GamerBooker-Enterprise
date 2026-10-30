@@ -1,0 +1,226 @@
+{
+  "title": "GamerBooker Enterprise v1.0",
+  "as_of": "2026-10-30",
+  "documents": [
+    {
+      "path": "00-README.md",
+      "words": 543,
+      "sha256": "ef410e2abbb1753e1f0635ffdd79874325cac303ff1ba9656c33a13dbf825bf0"
+    },
+    {
+      "path": "00-decisions-and-traceability.md",
+      "words": 435,
+      "sha256": "38d1e3a9369060d81a27180208439eb40e0b384d7cd67558e275209ae8ee3872"
+    },
+    {
+      "path": "00-document-index.md",
+      "words": 260,
+      "sha256": "9b5da4831e38ed7ba056c278baa449a891230b4e0ca6e463165221235571c49a"
+    },
+    {
+      "path": "00-glossary.md",
+      "words": 285,
+      "sha256": "0fc246429430360c5f2f570ddc6afa787c010aa79126dd44f3a80c56efa8d608"
+    },
+    {
+      "path": "01-product/01-product-vision.md",
+      "words": 312,
+      "sha256": "c195a5ad850ce1fef16c5950e1a487c7af31f64620354688ea9c3678484998ec"
+    },
+    {
+      "path": "01-product/02-scope-and-requirements.md",
+      "words": 471,
+      "sha256": "e896e2fa6e0f1429946d379833589d48320ac8e7bd3279cc4a1c7310191dcf5c"
+    },
+    {
+      "path": "01-product/03-business-rules.md",
+      "words": 540,
+      "sha256": "fbe60006736c4a9ffa83b08b2a6e7351db0ea126408d512e46870d9fe8a28bea"
+    },
+    {
+      "path": "01-product/04-user-stories-and-acceptance.md",
+      "words": 537,
+      "sha256": "83add491a728bfc6a1398031344bc911a69522cdb9e169ad69e0565dd0008b46"
+    },
+    {
+      "path": "02-architecture/01-system-architecture.md",
+      "words": 405,
+      "sha256": "4bec73e763b8d2b914af0212d80ffc7a785197948b22ce83a5178fe2552f7aa2"
+    },
+    {
+      "path": "02-architecture/02-data-model.md",
+      "words": 521,
+      "sha256": "f978b836b99e48ff052d6911df2860381e7ae1caa600e1c693be567358957c27"
+    },
+    {
+      "path": "02-architecture/03-architecture-decisions.md",
+      "words": 295,
+      "sha256": "4b125e695fd85a0a9968228b1674c542692ea7ca66a7d5f7ac9bcbdcbf604ee7"
+    },
+    {
+      "path": "02-architecture/04-nonfunctional-and-reliability.md",
+      "words": 294,
+      "sha256": "edf053106e9a86fbe29890734ab1c36afb42a63d28fe2fb8b98af8454717a4e6"
+    },
+    {
+      "path": "02-architecture/05-prototype-gap-analysis.md",
+      "words": 356,
+      "sha256": "9cc841ee0aeea0b2eafe997f2d11fbadee156b9277277b1a8cd7ca5ae7a3e2b0"
+    },
+    {
+      "path": "03-bookings/01-availability-and-holds.md",
+      "words": 518,
+      "sha256": "94d49cb2c3849538dac36c0d4b708a18ff67ad9b731da161fedb13c1c0358410"
+    },
+    {
+      "path": "03-bookings/02-booking-lifecycle.md",
+      "words": 394,
+      "sha256": "9f06e38e134978c6dc859e1935ff6d8791aa870a2789c569340a030826a34a15"
+    },
+    {
+      "path": "03-bookings/03-group-bookings-and-split-pay.md",
+      "words": 468,
+      "sha256": "718694ce017c2c03a1ef56367ca72ebb8ae7854f6be6b76f50dcda469a728636"
+    },
+    {
+      "path": "03-bookings/04-cancellations-reschedules-and-extensions.md",
+      "words": 390,
+      "sha256": "6ca7dba8433bd11740a72a1d358106c455432d381f3fa31beb18fcd9178c614f"
+    },
+    {
+      "path": "03-bookings/05-check-in-and-venue-operations.md",
+      "words": 335,
+      "sha256": "658e8588c4906140b33e4069e761ef9f88a910a1b0f01de07949d289c3661cd4"
+    },
+    {
+      "path": "04-payments/01-payment-architecture.md",
+      "words": 373,
+      "sha256": "7e60fb7ca8becd8701321046e754c359aab82bb15dd3b79bbf1d991862e070fd"
+    },
+    {
+      "path": "04-payments/02-deposits-balances-and-reception.md",
+      "words": 381,
+      "sha256": "dd0be68f72f609ee3a6c09adc59d0987eefe40b73452cb4c557c4f83cc3829df"
+    },
+    {
+      "path": "04-payments/03-refunds-reconciliation-and-settlement.md",
+      "words": 334,
+      "sha256": "9580583de8002aff971e8951b17e35487baccf07725d00c38bc1687cfc102c10"
+    },
+    {
+      "path": "04-payments/04-ledger-journal-and-examples.md",
+      "words": 429,
+      "sha256": "1702542f1fc4f14ea19631832bad5670be945507ff8a9a38f97d6ae5cf9087c2"
+    },
+    {
+      "path": "05-venue-dashboard/01-dashboard-modules-and-navigation.md",
+      "words": 323,
+      "sha256": "04c83c676f5fe0a0c1d261e00ad98c271adea64e6842c211c9cc7e2090031399"
+    },
+    {
+      "path": "05-venue-dashboard/02-visual-layout-builder.md",
+      "words": 660,
+      "sha256": "9ae7e0005b5a4662b4f5e62eef52c668b56487f9aeb135fd04837153d63f9563"
+    },
+    {
+      "path": "05-venue-dashboard/03-config-pricing-policy-engine.md",
+      "words": 472,
+      "sha256": "b4ead7b3982c3acafc3ed435c0e5a14cdc94b7a179d4bd81729d8ea1641fcf4d"
+    },
+    {
+      "path": "05-venue-dashboard/04-roles-onboarding-and-audit.md",
+      "words": 383,
+      "sha256": "4c872aab522c479e2edb212d3d188813d0fff6012e0f9175e90cccc4c5c14772"
+    },
+    {
+      "path": "06-consumables/01-menu-stock-and-products.md",
+      "words": 344,
+      "sha256": "3eb9ff110a0721a8929c718164a6b952a7eb345aefa0195950d929a1a06739cb"
+    },
+    {
+      "path": "06-consumables/02-order-lifecycle-and-fulfillment.md",
+      "words": 372,
+      "sha256": "09fc70c81586a77e14fdedaf15ef6a48ac3307bde0379e876f4ba847c37d812e"
+    },
+    {
+      "path": "07-mobile-app/01-screens-navigation-and-ux.md",
+      "words": 435,
+      "sha256": "02f5bdce3018a1bda1a896a24126c2b74138683be506cf34500a709aff391f3f"
+    },
+    {
+      "path": "07-mobile-app/02-notifications-and-support.md",
+      "words": 240,
+      "sha256": "6320b06aeeaf7b26260848088e492eb7779cbe9516375ca4263b385b082b2d4f"
+    },
+    {
+      "path": "08-api/01-api-contracts.md",
+      "words": 447,
+      "sha256": "dcc36343b97f721aaaea7907ba81a0d1213472fb0c75c2b02f0ad9b734a21ac0"
+    },
+    {
+      "path": "08-api/02-events-idempotency-and-jobs.md",
+      "words": 324,
+      "sha256": "8d79a1968c1173923195b96771baf103996ac1abebf36da7d468121360b6b394"
+    },
+    {
+      "path": "08-api/03-contract-schemas-and-errors.md",
+      "words": 400,
+      "sha256": "130c52c3de38963b5b934a66e2ad2ec9aac69bd1b84e49033c76331e5ab61a01"
+    },
+    {
+      "path": "09-security/01-security-and-privacy.md",
+      "words": 411,
+      "sha256": "ba04e168bdaa329de9f93fa3750953376ab2ad909753f6d9d8035c74e5a9fc8b"
+    },
+    {
+      "path": "09-security/02-legal-tax-and-platform-review.md",
+      "words": 382,
+      "sha256": "8803a31f4cd8c8e761b645b1de32a5a6f4a27729f08f57d81d263693c93d0f6c"
+    },
+    {
+      "path": "10-testing/01-test-strategy-and-acceptance.md",
+      "words": 615,
+      "sha256": "e2f6981079387de8ddfe3ea68f7504432b21829d20e6cccad9e87f20240991b2"
+    },
+    {
+      "path": "10-testing/02-test-data-and-fault-injection.md",
+      "words": 360,
+      "sha256": "e7b9bf2dbee9081b64caefab9108025e562f9be34b78c6619310c8bbac31762a"
+    },
+    {
+      "path": "11-delivery/01-implementation-roadmap.md",
+      "words": 357,
+      "sha256": "9d337205c5de176fb654fee61f7ccfc04b4621bd9c8ad1736a0c74335dd2e0c7"
+    },
+    {
+      "path": "11-delivery/02-operations-and-runbooks.md",
+      "words": 383,
+      "sha256": "0e4fe3f4c6508d00e0151028b72460050bf302b0c0785723c258683505ff4987"
+    },
+    {
+      "path": "11-delivery/03-rollout-metrics-and-go-no-go.md",
+      "words": 289,
+      "sha256": "19fc09421fa314b1871abbe2ced00731df87249959ef7d5d81a25a65b7dd155f"
+    },
+    {
+      "path": "11-delivery/04-engineering-handoff-backlog.md",
+      "words": 379,
+      "sha256": "cfed4b9cff23e6b9362b673f9f789a12915ef78f4d90d93d2bd275f9d4c47593"
+    },
+    {
+      "path": "12-commercial/01-business-model-and-venue-agreement.md",
+      "words": 252,
+      "sha256": "1eadb916fc1b3f90e420e6a99f5ec3f771a9281ca54d023c10b8fe73f90b4d3e"
+    },
+    {
+      "path": "99-open-issues-and-approvals.md",
+      "words": 340,
+      "sha256": "80481cb329d11f19eb79c57f3433c5fff3823032f56b6e763e4105d5edd24fc3"
+    },
+    {
+      "path": "99-source-references.md",
+      "words": 197,
+      "sha256": "3b1a7501ed03f27e4f4bef5df80076957c9e46d2850de300c9b917eb2809ff8d"
+    }
+  ]
+}
