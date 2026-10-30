@@ -61,6 +61,7 @@ export class HealthController {
         'READY_DB_UNAVAILABLE',
         READY_MESSAGE,
         getRequestId() ?? '',
+        { retryable: true },
       );
     }
 
@@ -75,6 +76,7 @@ export class HealthController {
         'READY_DB_UNAVAILABLE',
         READY_MESSAGE,
         getRequestId() ?? '',
+        { retryable: true },
       );
     }
 
