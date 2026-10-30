@@ -7,9 +7,11 @@ import {
   Res,
 } from '@nestjs/common';
 import { connect } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { buildError, type ErrorEnvelope } from '../common/error-envelope';
 import { getRequestId } from '../common/request-context';
+import { REQUEST_ID_HEADER } from '../common/request-id.middleware';
 
 const READY_MESSAGE = 'Database is not reachable.';
 const PROBE_TIMEOUT_MS = 1500;
@@ -60,7 +62,7 @@ export class HealthController {
       return buildError(
         'READY_DB_UNAVAILABLE',
         READY_MESSAGE,
-        getRequestId() ?? '',
+        resolveRequestId(res),
         { retryable: true },
       );
     }
@@ -75,7 +77,7 @@ export class HealthController {
       return buildError(
         'READY_DB_UNAVAILABLE',
         READY_MESSAGE,
-        getRequestId() ?? '',
+        resolveRequestId(res),
         { retryable: true },
       );
     }
@@ -128,4 +130,21 @@ function probeTcp(host: string, port: number): Promise<boolean> {
     socket.once('timeout', () => finish(false));
     socket.once('error', () => finish(false));
   });
+}
+
+/**
+ * The correlation id for this response. Prefers the AsyncLocalStorage value,
+ * falls back to the header the middleware already set, and only then mints a
+ * fresh id. The envelope must never carry an empty request_id.
+ */
+function resolveRequestId(res: Response): string {
+  const fromStore = getRequestId();
+  if (fromStore) {
+    return fromStore;
+  }
+  const fromHeader = res.getHeader(REQUEST_ID_HEADER);
+  if (typeof fromHeader === 'string' && fromHeader.length > 0) {
+    return fromHeader;
+  }
+  return randomUUID();
 }

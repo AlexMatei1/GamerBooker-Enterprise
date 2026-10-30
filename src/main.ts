@@ -15,6 +15,10 @@ async function bootstrap(): Promise<void> {
   app.use(requestIdMiddleware);
 
   const port = Number(process.env.PORT ?? 3000);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    // Fail fast: a NaN port would surface as an opaque listen() error.
+    throw new Error(`PORT must be an integer between 1 and 65535, got "${process.env.PORT}"`);
+  }
   await app.listen(port);
 }
 
