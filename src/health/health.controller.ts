@@ -146,5 +146,9 @@ function resolveRequestId(res: Response): string {
   if (typeof fromHeader === 'string' && fromHeader.length > 0) {
     return fromHeader;
   }
-  return randomUUID();
+  // Last resort. Echo the minted id so the envelope and the response header
+  // can never disagree about which request this error belongs to.
+  const minted = randomUUID();
+  res.setHeader(REQUEST_ID_HEADER, minted);
+  return minted;
 }
