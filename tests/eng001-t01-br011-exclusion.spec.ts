@@ -41,7 +41,7 @@ describe('ENG001-T01 / BR-011 exclusion constraint on active resource allocation
   const allocationRange = (from: string, to: string): string =>
     `tstzrange('${D}${from}:00Z'::timestamptz, '${D}${to}:00Z'::timestamptz, '[)')`;
 
-  const insertSql = (from: string, to: string, status: string): string =>
+  const insertSql = (from: string, to: string): string =>
     `INSERT INTO ${quotedTable} (id, resource_id, period, status) ` +
     `VALUES ($1::uuid, $2::uuid, ${allocationRange(from, to)}, $3)`;
 
@@ -51,7 +51,7 @@ describe('ENG001-T01 / BR-011 exclusion constraint on active resource allocation
     to: string,
     status: 'active' | 'cancelled',
     id: string = randomUUID(),
-  ): Promise<unknown> => client.query(insertSql(from, to, status), [id, resourceId, status]);
+  ): Promise<unknown> => client.query(insertSql(from, to), [id, resourceId, status]);
 
   const countRows = async (): Promise<number> => {
     const result = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${quotedTable}`);
@@ -167,7 +167,7 @@ describe('ENG001-T01 / BR-011 exclusion constraint on active resource allocation
     try {
       await client.query('BEGIN');
       firstInTransaction = true;
-      await client.query(insertSql('10:00', '11:00', 'active'), [
+      await client.query(insertSql('10:00', '11:00'), [
         randomUUID(),
         RESOURCE_A,
         'active',
@@ -176,7 +176,7 @@ describe('ENG001-T01 / BR-011 exclusion constraint on active resource allocation
       await second.query('BEGIN');
       // Attach handlers immediately so the rejection is never unhandled.
       const settled = second
-        .query(insertSql('10:30', '10:45', 'active'), [randomUUID(), RESOURCE_A, 'active'])
+        .query(insertSql('10:30', '10:45'), [randomUUID(), RESOURCE_A, 'active'])
         .then(
           () => ({ ok: true as const, code: undefined }),
           (err: unknown) => ({ ok: false as const, code: errorCode(err) }),

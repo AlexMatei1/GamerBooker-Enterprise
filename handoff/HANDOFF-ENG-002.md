@@ -71,10 +71,14 @@ D0 Session mechanism - DECIDED (thinker): opaque DB-backed session, not JWT.
   and no secret manager exist, and revocation must be immediate for staff
   deactivation. Cost accepted: one SELECT per authenticated request.
 
-D1 Verification delivery - DECIDED (human, phase 0): a development-only token
-  is written to the server log and returned by an endpoint that exists only
-  when NODE_ENV=development. No mail or SMS provider is integrated. This is an
-  explicit gap for staging/prod and must be closed before either environment.
+D1 Verification delivery - DECIDED (human, phase 0): no mail or SMS provider
+  is integrated. In NODE_ENV=development only, POST /v1/auth/register returns
+  the raw verification token in its response, and GET /v1/dev/verification-token
+  re-issues a fresh one for an unverified account. The raw token is never
+  stored (only its SHA-256) and never written to a log, so it cannot be read
+  back later. DevAuthModule is not imported outside development, so the route
+  does not exist there at all; verified by a 404 under NODE_ENV=production.
+  This is an explicit gap for staging/prod and must be closed before either.
 
 D2 MFA scope - DECIDED (human): MFA is required for OWNER, VENUE_MANAGER and
   PLATFORM_ADMIN only. RECEPTION and BAR_STAFF authenticate with password only
