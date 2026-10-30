@@ -102,6 +102,19 @@ D6 Staff invitation - DECIDED (human): the owner creates an invitation token
   with an expiry; the invited staff member sets their own password. The owner
   never learns a staff credential.
 
+D7 Subaddress normalization - DECIDED (agent, reversible, flagged to human):
+  a +tag subaddress is NOT collapsed. "owner@venue.ro" and "owner+promo@venue.ro"
+  are two identities. Rationale: plus addressing is a Gmail convention, not a
+  property of email; a local part is opaque to us and "+" is a legal character.
+  Collapsing it would merge two real mailboxes on any domain that uses "+"
+  meaningfully, and there is no way to know from the address alone. It also
+  buys nothing against abuse, because a subaddress delivers to the same inbox,
+  so verification passes either way. Anti-abuse belongs to rate limiting on the
+  auth routes (BR-024, Slice B), not to identity. This amends the earlier
+  ENG002-T02 wording, which mentioned +tag variants without a basis in docs/.
+  If the human wants collapsing instead, say so and this becomes D7-revised
+  before any further work depends on it.
+
 ## Data shape
 
 ENG-002 owns these. All tables: id uuid primary key, created_at/updated_at
@@ -171,8 +184,10 @@ AUTH_ACCOUNT_LOCKED, AUTH_ROLE_NOT_PERMITTED, AUTH_INVITATION_INVALID.
 ## Acceptance cases
 
 ENG002-T01 register then verify then login then GET /v1/me returns own user_id.
-ENG002-T02 duplicate email (including case and +tag variants) yields exactly one
-  users row and one conflict response; a different email succeeds.
+ENG002-T02 duplicate email yields exactly one users row and one conflict
+  response; a different email succeeds. Uniqueness is case-insensitive on the
+  literal address (D4). A +tag subaddress is a different address and therefore
+  a different identity (D7), not a duplicate.
 ENG002-T03 RECEPTION may read bookings of its own venue (200); the same user on
   another venue gets 404; any staff role calling a customer booking-create route
   gets 403 AUTH_ROLE_NOT_PERMITTED, and no staff create-on-behalf route exists.

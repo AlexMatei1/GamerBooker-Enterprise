@@ -276,6 +276,27 @@ describe('ENG002-T02 email uniqueness is enforced by the database', () => {
       ]),
     ).rejects.toMatchObject({ code: '23505' });
   });
+
+  it('a +tag subaddress is a distinct identity, not a duplicate (D7)', async () => {
+    const local = 'eng002-tag-' + randomUUID().slice(0, 8);
+    const plain = local + '@example.test';
+    const tagged = local + '+promo@example.test';
+
+    const first = await call('POST', '/v1/auth/register', {
+      body: { email: plain, password: PASSWORD, accepted_terms: true },
+    });
+    expect(first.status).toBe(201);
+    const second = await call('POST', '/v1/auth/register', {
+      body: { email: tagged, password: PASSWORD, accepted_terms: true },
+    });
+    expect(second.status).toBe(201);
+
+    const rows = await db.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM users WHERE lower(email) IN ($1, $2) AND deleted_at IS NULL',
+      [plain, tagged],
+    );
+    expect(rows.rows[0].n).toBe(2);
+  });
 });
 
 describe('ENG002-T05 no account enumeration', () => {
