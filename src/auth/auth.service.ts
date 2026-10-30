@@ -10,7 +10,7 @@ import {
 import { AuthHttpError } from './auth-error';
 import { hash as hashPassword, verify as verifyPassword, verifyDummy } from './password';
 import { hashToken, newSessionToken, newVerificationToken } from './tokens';
-import type { LoginInput, RegisterInput, SessionKind } from './validation';
+import type { DeleteReason, LoginInput, RegisterInput, SessionKind } from './validation';
 
 const GENERIC_CREDENTIALS = 'Email or password is incorrect.';
 const UNVERIFIED_MESSAGE = 'Email address is not verified.';
@@ -52,6 +52,10 @@ export interface SessionPrincipal {
   kind: SessionKind;
 }
 
+export interface DeleteAccountResult {
+  sessionsRevoked: number;
+}
+
 interface UserRow {
   id: string;
   email: string;
@@ -62,7 +66,6 @@ interface UserRow {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly isDev = process.env.NODE_ENV === 'development';
 
   /**
    * Creates an unverified account and one 24h email_verify token.
@@ -114,22 +117,42 @@ export class AuthService {
    * one for an unverified account. Mounted only when NODE_ENV=development.
    */
   async issueDevVerificationToken(email: string): Promise<{ token: string }> {
-    const found = await getPool().query<{ id: string }>(
-      'SELECT id FROM users' +
-        ' WHERE lower(email) = $1 AND deleted_at IS NULL AND email_verified_at IS NULL',
-      [email],
-    );
-    const user = found.rows[0];
-    if (!user) {
-      throw new AuthHttpError(HttpStatus.NOT_FOUND, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query<{ id: string }>(
+        'SELECT id FROM users' +
+          ' WHERE lower(email) = $1 AND deleted_at IS NULL AND email_verified_at IS NULL',
+        [email],
+      );
+      const user = found.rows[0];
+      if (!user) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+      }
+      // Supersede before issuing. Leaving older tokens live would mean every
+      // token ever issued for this account stays usable for its full 24h,
+      // which is a fan-out nobody can revoke.
+      await client.query(
+        'UPDATE verification_tokens SET consumed_at = now(), updated_at = now()' +
+          " WHERE user_id = $1 AND purpose = 'email_verify' AND consumed_at IS NULL",
+        [user.id],
+      );
+      const token = newVerificationToken();
+      await client.query(
+        'INSERT INTO verification_tokens (user_id, token_hash, purpose, expires_at)' +
+          ' VALUES ($1, $2, $3, $4)',
+        [user.id, token.hash, 'email_verify', new Date(Date.now() + VERIFICATION_TTL_MS)],
+      );
+      await this.writeAudit(client, 'auth.dev_verification_reissued', user.id, {});
+      await client.query('COMMIT');
+      return { token: token.token };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
     }
-    const token = newVerificationToken();
-    await getPool().query(
-      'INSERT INTO verification_tokens (user_id, token_hash, purpose, expires_at)' +
-        ' VALUES ($1, $2, $3, $4)',
-      [user.id, token.hash, 'email_verify', new Date(Date.now() + VERIFICATION_TTL_MS)],
-    );
-    return { token: token.token };
   }
 
   private isDevShortCircuit(): boolean {
@@ -285,6 +308,103 @@ export class AuthService {
   }
 
   /**
+   * Revokes every session the user holds, including the one making the call.
+   * One transaction, so the audit row and the revocation cannot disagree.
+   */
+  async logoutAll(principal: SessionPrincipal): Promise<number> {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const revoked = await client.query(
+        'UPDATE sessions SET revoked_at = now(), updated_at = now()' +
+          ' WHERE user_id = $1 AND revoked_at IS NULL',
+        [principal.userId],
+      );
+      const count = revoked.rowCount ?? 0;
+      await this.writeAudit(client, 'auth.logout_all', principal.userId, { revoked: count });
+      await client.query('COMMIT');
+      return count;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Closes the caller's own account (ENG002-T07).
+   *
+   * Irreversible and anonymizing: the address is replaced with one that can
+   * never receive mail, the phone and the password hash are removed, and every
+   * session and outstanding token is revoked in the same transaction that
+   * writes the audit row. The row itself survives so the audit trail keeps its
+   * foreign key and the deletion stays provable.
+   *
+   * The password is required: a stolen session alone must not be enough to
+   * destroy an account.
+   */
+  async deleteAccount(
+    principal: SessionPrincipal,
+    password: string,
+    reason: DeleteReason,
+  ): Promise<DeleteAccountResult> {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query<{ id: string; password_hash: string | null }>(
+        'SELECT id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [principal.userId],
+      );
+      const user = found.rows[0];
+      if (!user) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw new AuthHttpError(HttpStatus.UNAUTHORIZED, 'AUTH_REQUIRED', REQUIRED_MESSAGE);
+      }
+
+      // Same cost whether the hash is missing or the password is wrong.
+      const ok = user.password_hash
+        ? await verifyPassword(user.password_hash, password)
+        : await verifyDummy();
+      if (!ok) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw invalidCredentials();
+      }
+
+      await client.query(
+        "UPDATE users SET email = 'deleted+' || id::text || '@deleted.invalid'," +
+          ' phone = NULL, phone_verified_at = NULL, password_hash = NULL,' +
+          " identity_status = 'suspended', deleted_at = now(), updated_at = now()" +
+          ' WHERE id = $1',
+        [user.id],
+      );
+      const revoked = await client.query(
+        'UPDATE sessions SET revoked_at = now(), updated_at = now()' +
+          ' WHERE user_id = $1 AND revoked_at IS NULL',
+        [user.id],
+      );
+      await client.query(
+        'UPDATE verification_tokens SET consumed_at = now(), updated_at = now()' +
+          ' WHERE user_id = $1 AND consumed_at IS NULL',
+        [user.id],
+      );
+      const sessionsRevoked = revoked.rowCount ?? 0;
+      // reason is a closed set of codes, never free text: see validation.ts.
+      await this.writeAudit(client, 'account.delete', user.id, {
+        reason,
+        sessions_revoked: sessionsRevoked,
+      });
+      await client.query('COMMIT');
+      return { sessionsRevoked };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Append-only audit row. Metadata carries no email, phone, token or password:
    * callers pass only non-identifying facts. Writes inside the caller's
    * transaction so a failed business change cannot leave an orphan audit.
@@ -292,13 +412,20 @@ export class AuthService {
   private async writeAudit(
     db: DbExecutor,
     action: string,
-    actorUserId: string,
+    actorId: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
+    // request_id is NOT NULL in the schema, and it is the only way to tie an
+    // audit row to the request that caused it. An out-of-request caller must
+    // pass an explicit id rather than write a row nobody can correlate.
+    const requestId = getRequestId();
+    if (!requestId) {
+      throw new Error('audit write outside a request context: no request id');
+    }
     await db.query(
-      'INSERT INTO audit_events (actor_user_id, action, metadata, request_id)' +
+      'INSERT INTO audit_events (actor_id, action, metadata, request_id)' +
         ' VALUES ($1, $2, $3::jsonb, $4)',
-      [actorUserId, action, JSON.stringify(metadata), getRequestId() ?? null],
+      [actorId, action, JSON.stringify(metadata), requestId],
     );
   }
 }

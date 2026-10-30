@@ -1,178 +1,50 @@
 /**
- * ENG-002 Slice A acceptance tests: T01, T02, T05, T06, T08.
+ * ENG-002 acceptance tests: T01, T02, T05, T06, T08.
  *
  * Level: integration. Real PostgreSQL (a dedicated database created, migrated
- * and dropped by this file) and real HTTP through the Nest application, using
- * the same configureApp() wiring as src/main.ts. No mocks of the auth path.
+ * and dropped by the shared harness) and real HTTP through the Nest
+ * application, using the same configureApp() wiring as src/main.ts. No mocks
+ * of the auth path.
  *
- * T03, T04 and T07 belong to Slice B (RBAC guards, MFA, account deletion) and
- * are not claimed here.
+ * T03, T04 and T07 belong to Slice B and are covered by their own suites.
  *
  * Source: handoff/HANDOFF-ENG-002.md, acceptance cases ENG002-T01..T08.
  */
-import { Client } from 'pg';
+import type { Client } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { INestApplication } from '@nestjs/common';
-import type { AddressInfo } from 'node:net';
+import {
+  PASSWORD,
+  startTestApp,
+  uniqueEmail,
+  type ApiResponse,
+  type Envelope,
+  type TestApp,
+} from './support/auth-harness';
 
-const ADMIN_DSN =
-  process.env.ADMIN_DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:5433/postgres';
-const TEST_DB = 'gamerbooker_test';
-const TEST_DSN = `postgresql://postgres@127.0.0.1:5433/${TEST_DB}`;
-const PASSWORD = 'correct horse battery staple';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-interface ApiResponse {
-  status: number;
-  headers: Headers;
-  text: string;
-  json: unknown;
-  setCookie: string[];
-}
-
-interface Envelope {
-  code: string;
-  message: string;
-  request_id: string;
-  retryable: boolean;
-}
-
-let app: INestApplication;
-let baseUrl = '';
+let app: TestApp;
 let db: Client;
 
-async function adminExec(statement: string): Promise<void> {
-  const admin = new Client({ connectionString: ADMIN_DSN });
-  await admin.connect();
-  try {
-    await admin.query(statement);
-  } finally {
-    await admin.end();
-  }
-}
-
-async function call(
+const call = (
   method: string,
   path: string,
-  opts: { body?: unknown; headers?: Record<string, string> } = {},
-): Promise<ApiResponse> {
-  const headers: Record<string, string> = { ...(opts.headers ?? {}) };
-  if (opts.body !== undefined) {
-    headers['content-type'] = 'application/json';
-  }
-  const res = await fetch(baseUrl + path, {
-    method,
-    headers,
-    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-    redirect: 'manual',
-  });
-  const text = await res.text();
-  let json: unknown;
-  try {
-    json = text.length > 0 ? JSON.parse(text) : undefined;
-  } catch {
-    json = undefined;
-  }
-  return {
-    status: res.status,
-    headers: res.headers,
-    text,
-    json,
-    setCookie: res.headers.getSetCookie(),
-  };
-}
-
-function errorOf(res: ApiResponse): Envelope {
-  const body = res.json as { error?: Partial<Envelope> } | undefined;
-  const error = body?.error;
-  if (!error || typeof error.code !== 'string' || typeof error.message !== 'string') {
-    throw new Error('response is not a standard error envelope: ' + res.text.slice(0, 200));
-  }
-  return {
-    code: error.code,
-    message: error.message,
-    request_id: String(error.request_id ?? ''),
-    retryable: error.retryable === true,
-  };
-}
-
-function cookieOf(res: ApiResponse): string {
-  const first = res.setCookie[0];
-  if (!first) {
-    throw new Error('expected a Set-Cookie header, got none');
-  }
-  return first.split(';')[0];
-}
-
-function uniqueEmail(): string {
-  return 'eng002-' + randomUUID().slice(0, 12) + '@example.test';
-}
-
-/** Registers, verifies and logs in; returns the dashboard cookie and user id. */
-async function verifiedUser(): Promise<{ email: string; userId: string; cookie: string }> {
-  const email = uniqueEmail();
-  const reg = await call('POST', '/v1/auth/register', {
-    body: { email, password: PASSWORD, accepted_terms: true },
-  });
-  expect(reg.status).toBe(201);
-  const userId = (reg.json as { user_id: string }).user_id;
-  const token = (reg.json as { verification_token?: string }).verification_token;
-  expect(typeof token).toBe('string');
-  const ver = await call('POST', '/v1/auth/verify', { body: { token } });
-  expect(ver.status).toBe(200);
-  const login = await call('POST', '/v1/auth/login', { body: { email, password: PASSWORD } });
-  expect(login.status).toBe(200);
-  return { email, userId, cookie: cookieOf(login) };
-}
+  opts?: Parameters<TestApp['call']>[2],
+): Promise<ApiResponse> => app.call(method, path, opts);
+const errorOf = (res: ApiResponse): Envelope => app.errorOf(res);
+const cookieOf = (res: ApiResponse): string => app.cookieOf(res);
+const verifiedUser = () => app.verifiedUser();
 
 beforeAll(async () => {
-  // A dedicated database so the tests never touch gamerbooker_dev and never
-  // depend on rows another run left behind.
-  await adminExec(`DROP DATABASE IF EXISTS ${TEST_DB} WITH (FORCE)`);
-  await adminExec(`CREATE DATABASE ${TEST_DB}`);
-
-  process.env.DATABASE_URL = TEST_DSN;
-  // DevAuthModule is imported only in development; T01 needs the dev delivery
-  // path for the verification token (HANDOFF-ENG-002 D1).
-  process.env.NODE_ENV = 'development';
-
-  const migrationsDir = join(__dirname, '..', 'migrations');
-  const files = readdirSync(migrationsDir)
-    .filter((name) => name.endsWith('.sql'))
-    .sort();
-  db = new Client({ connectionString: TEST_DSN });
-  await db.connect();
-  for (const file of files) {
-    await db.query(readFileSync(join(migrationsDir, file), 'utf8'));
-  }
-
-  const { Test } = await import('@nestjs/testing');
-  const { AppModule } = await import('../src/app.module');
-  const { configureApp } = await import('../src/app.setup');
-
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  app = moduleRef.createNestApplication({ logger: false });
-  configureApp(app);
-  await app.init();
-  await app.listen(0);
-  const address = app.getHttpServer().address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${address.port}`;
+  app = await startTestApp('slicea');
+  db = app.db;
 }, 120000);
 
 afterAll(async () => {
   if (app) {
-    await app.close();
+    await app.stop();
   }
-  const { closePool } = await import('../src/db/pool');
-  await closePool();
-  if (db) {
-    await db.end();
-  }
-  await adminExec(`DROP DATABASE IF EXISTS ${TEST_DB} WITH (FORCE)`);
 }, 120000);
-
 describe('ENG002-T01 register, verify, login, own identity', () => {
   it('register returns 201 with a user_id and the dev-only verification token', async () => {
     const email = uniqueEmail();
@@ -458,7 +330,7 @@ describe('ENG002-T08 mass assignment and secret leakage', () => {
   it('every auth mutation writes an append-only audit row with a request_id', async () => {
     const { userId } = await verifiedUser();
     const rows = await db.query<{ action: string; request_id: string | null }>(
-      'SELECT action, request_id FROM audit_events WHERE actor_user_id = $1 ORDER BY occurred_at',
+      'SELECT action, request_id FROM audit_events WHERE actor_id = $1 ORDER BY occurred_at',
       [userId],
     );
     const actions = rows.rows.map((row) => row.action);

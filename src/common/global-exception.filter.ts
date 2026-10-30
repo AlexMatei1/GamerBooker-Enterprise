@@ -51,11 +51,26 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const status = statusOf(exception);
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      // Category only. The thrown text is untrusted.
-      this.logger.error('unhandled error status=' + status + ' request_id=' + requestId);
+      // Category only. The thrown text is untrusted, but a bare "500" is not
+      // diagnosable: the error class and, for a driver error, the SQLSTATE are
+      // fixed strings that carry no data and no secret.
+      this.logger.error(
+        'unhandled error status=' + status +
+          ' request_id=' + requestId +
+          ' kind=' + errorCategory(exception),
+      );
     }
 
     const mapped = mappingFor(status, exception);
+
+    // 429 is the one status where the client is told how long to wait, and the
+    // header must agree with the envelope's retry_after_seconds.
+    if (status === HttpStatus.TOO_MANY_REQUESTS) {
+      const retryAfter = mapped.details?.retry_after_seconds;
+      if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
+        res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfter))));
+      }
+    }
 
     res.status(status).json(
       buildError(mapped.code, mapped.message, requestId, {
@@ -64,6 +79,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }),
     );
   }
+}
+
+/**
+ * A non-secret category for a 5xx log line: the error class, plus the SQLSTATE
+ * when the driver supplied one. Both are fixed vocabulary; neither carries
+ * user data, SQL text or a DSN.
+ */
+export function errorCategory(exception: unknown): string {
+  if (exception instanceof HttpException) {
+    return 'http_' + exception.getStatus();
+  }
+  if (exception instanceof Error) {
+    const code = (exception as { code?: unknown }).code;
+    return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)
+      ? exception.name + '/' + code
+      : exception.name;
+  }
+  return 'unknown';
 }
 
 export function statusOf(exception: unknown): number {

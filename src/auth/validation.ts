@@ -143,3 +143,50 @@ export function sessionKindOf(raw: unknown, issues: FieldIssue[]): SessionKind {
   return 'dashboard';
 }
 
+/**
+ * Reasons a person may give for closing their own account.
+ *
+ * A closed set, not free text, because the reason is copied into an audit row
+ * and audit metadata must never carry anything the caller typed: free text is
+ * how an email address, a phone number or a name ends up in the audit trail.
+ */
+export const DELETE_REASONS = [
+  'no_longer_needed',
+  'privacy',
+  'switched_service',
+  'other',
+] as const;
+
+export type DeleteReason = (typeof DELETE_REASONS)[number] | 'unspecified';
+
+export interface DeleteAccountInput {
+  password: string;
+  reason: DeleteReason;
+}
+
+export function validateDeleteAccount(body: unknown): DeleteAccountInput {
+  const issues: FieldIssue[] = [];
+  const record = asRecord(body);
+  // Re-authentication before a destructive, irreversible action. No length
+  // policy here: a length error would tell an attacker what the stored policy
+  // is, and the only useful outcome is "correct" or "not correct".
+  const password = typeof record.password === 'string' ? record.password : '';
+  if (password.length === 0) {
+    issues.push({ field: 'password', kind: 'required' });
+  }
+  let reason: DeleteReason = 'unspecified';
+  if (record.reason !== undefined && record.reason !== null) {
+    if (typeof record.reason === 'string' && isDeleteReason(record.reason)) {
+      reason = record.reason;
+    } else {
+      issues.push({ field: 'reason', kind: 'invalid' });
+    }
+  }
+  throwIf(issues);
+  return { password, reason };
+}
+
+function isDeleteReason(value: string): value is (typeof DELETE_REASONS)[number] {
+  return (DELETE_REASONS as readonly string[]).includes(value);
+}
+

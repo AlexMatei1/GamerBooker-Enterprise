@@ -1,12 +1,14 @@
-import { CanActivate, ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import type { Response } from 'express';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from './auth-error';
+import { IDLE_TTL_MS, SESSION_COOKIE } from './auth.constants';
+import { sessionCookie } from './cookies';
 import { hashToken } from './tokens';
 import {
   isTokenShaped,
   readBearer,
   readCookie,
-  SESSION_COOKIE,
   singleHeaderValue,
   type AuthContext,
 } from './token-shape';
@@ -24,6 +26,14 @@ interface SessionRow {
 
 const REQUIRED_MESSAGE = 'Authentication is required.';
 
+/** How the token arrived. A dashboard token is only accepted as a cookie. */
+type Channel = 'cookie' | 'bearer';
+
+interface Presented {
+  token: string;
+  channel: Channel;
+}
+
 /**
  * Resolves the caller from an opaque session token: the __Host- cookie for the
  * dashboard, or Authorization: Bearer for mobile. Both hit the same sessions
@@ -31,25 +41,34 @@ const REQUIRED_MESSAGE = 'Authentication is required.';
  *
  * Nothing from the request is trusted except the token itself. The user id,
  * the role and the venue are never read from a header or a body.
+ *
+ * Idle expiry is sliding: an accepted request moves idle_expires_at forward,
+ * bounded by the absolute expiry, and the cookie Max-Age is refreshed to match.
+ * Without the extension the column would be a fixed 12h window from mint while
+ * claiming to be idle-based.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
+  private readonly logger = new Logger(SessionGuard.name);
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<RequestLike>();
-    const token = extractToken(req);
-    if (!token) {
+    const http = context.switchToHttp();
+    const req = http.getRequest<RequestLike>();
+    const presented = extractToken(req);
+    if (!presented) {
       throw required();
     }
 
     const found = await getPool().query<SessionRow>(
-      'SELECT s.id, s.user_id, s.kind FROM sessions s' +
+      'SELECT s.id, s.user_id, s.kind' +
+        ' FROM sessions s' +
         ' JOIN users u ON u.id = s.user_id' +
         ' WHERE s.token_hash = $1' +
         ' AND s.revoked_at IS NULL' +
         ' AND s.idle_expires_at > now()' +
         ' AND s.absolute_expires_at > now()' +
         ' AND u.deleted_at IS NULL',
-      [hashToken(token)],
+      [hashToken(presented.token)],
     );
 
     const row = found.rows[0];
@@ -57,31 +76,58 @@ export class SessionGuard implements CanActivate {
       throw required();
     }
 
-    req.auth = { sessionId: row.id, userId: row.user_id, kind: row.kind };
-
-    // Best effort: a failed touch must not fail an otherwise valid request.
-    try {
-      void getPool()
-        .query('UPDATE sessions SET last_seen_at = now() WHERE id = $1', [row.id])
-        .catch(() => undefined);
-    } catch {
-      // Pool unavailable; the request is already authorized.
+    // A dashboard token is issued to a browser inside an HttpOnly cookie. If it
+    // is presented as a bearer it is being used outside the shape it was issued
+    // for, so it is refused rather than widening the credential surface.
+    if (row.kind === 'dashboard' && presented.channel === 'bearer') {
+      throw required();
     }
 
+    req.auth = { sessionId: row.id, userId: row.user_id, kind: row.kind };
+
+    await this.touch(http.getResponse<Response>(), row, presented);
     return true;
+  }
+
+  /**
+   * Extends the idle window and refreshes the cookie. A failure here must not
+   * fail an already-authorized request, but it is logged with the session id
+   * and a SQLSTATE only: silently swallowing it would hide a database problem
+   * while sessions quietly stopped sliding.
+   */
+  private async touch(res: Response, row: SessionRow, presented: Presented): Promise<void> {
+    try {
+      await getPool().query(
+        'UPDATE sessions' +
+          ' SET last_seen_at = now(),' +
+          " idle_expires_at = LEAST(now() + $2::bigint * interval '1 millisecond', absolute_expires_at)," +
+          ' updated_at = now()' +
+          ' WHERE id = $1 AND revoked_at IS NULL',
+        [row.id, IDLE_TTL_MS],
+      );
+      if (presented.channel === 'cookie') {
+        res.setHeader('Set-Cookie', sessionCookie(presented.token));
+      }
+    } catch (err) {
+      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : 'unknown';
+      this.logger.warn('session touch failed session_id=' + row.id + ' sqlstate=' + code);
+    }
   }
 }
 
-function extractToken(req: RequestLike): string | undefined {
+function extractToken(req: RequestLike): Presented | undefined {
   const cookieHeader = singleHeaderValue(req.headers.cookie);
   if (cookieHeader) {
     const fromCookie = readCookie(cookieHeader, SESSION_COOKIE);
     if (fromCookie !== undefined) {
-      return isTokenShaped(fromCookie) ? fromCookie : undefined;
+      return isTokenShaped(fromCookie) ? { token: fromCookie, channel: 'cookie' } : undefined;
     }
   }
   const bearer = readBearer(singleHeaderValue(req.headers.authorization));
-  return bearer !== undefined && isTokenShaped(bearer) ? bearer : undefined;
+  if (bearer !== undefined && isTokenShaped(bearer)) {
+    return { token: bearer, channel: 'bearer' };
+  }
+  return undefined;
 }
 
 function required(): AuthHttpError {
