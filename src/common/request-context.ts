@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * Per-request context propagated through the async call graph.
  *
  * Bare callbacks (setTimeout, event emitters) lose the store; code on the
- * request chain — which awaits or returns `next()` — keeps it.
+ * request chain - which awaits or returns `next()` - keeps it.
  */
 export interface RequestContext {
   requestId: string;
