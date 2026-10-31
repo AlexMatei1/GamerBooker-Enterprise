@@ -134,7 +134,12 @@ export async function startTestApp(dbSuffix: string): Promise<TestApp> {
     const res = await fetch(baseUrl + path, {
       method,
       headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      body:
+        opts.body === undefined
+          ? undefined
+          : typeof opts.body === 'string'
+          ? opts.body
+          : JSON.stringify(opts.body),
       redirect: 'manual',
     });
     const text = await res.text();
