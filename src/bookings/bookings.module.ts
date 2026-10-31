@@ -5,10 +5,12 @@ import { AvailabilityService } from './availability.service';
 import { PoliciesService } from './policies.service';
 import { PricingService } from './pricing.service';
 import { QuotesService } from './quotes.service';
+import { HoldsService } from './holds.service';
 import { SchedulesController } from './schedules.controller';
 import { AvailabilityController } from './availability.controller';
 import { PoliciesController } from './policies.controller';
 import { QuotesController } from './quotes.controller';
+import { HoldsController } from './holds.controller';
 
 @Module({
   imports: [AuthModule],
@@ -17,6 +19,7 @@ import { QuotesController } from './quotes.controller';
     AvailabilityController,
     PoliciesController,
     QuotesController,
+    HoldsController,
   ],
   providers: [
     SchedulesService,
@@ -24,6 +27,7 @@ import { QuotesController } from './quotes.controller';
     PoliciesService,
     PricingService,
     QuotesService,
+    HoldsService,
   ],
   exports: [
     SchedulesService,
@@ -31,6 +35,7 @@ import { QuotesController } from './quotes.controller';
     PoliciesService,
     PricingService,
     QuotesService,
+    HoldsService,
   ],
 })
 export class BookingsModule {}
