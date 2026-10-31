@@ -1,9 +1,17 @@
-import { CanActivate, ExecutionContext, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpStatus,
+  Injectable,
+  Logger,
+  SetMetadata,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from './auth-error';
 import { IDLE_TTL_MS, SESSION_COOKIE } from './auth.constants';
 import { sessionCookie } from './cookies';
+import { MFA_GATED_ROLES } from './membership.service';
 import { hashToken } from './tokens';
 import {
   isTokenShaped,
@@ -22,9 +30,27 @@ interface SessionRow {
   id: string;
   user_id: string;
   kind: 'mobile' | 'dashboard';
+  mfa_state: 'pending' | 'active';
+  /** True when the user currently holds an active membership in a gated role. */
+  mfa_gated: boolean;
+  /** True when a confirmed TOTP factor exists. */
+  mfa_enrolled: boolean;
 }
 
 const REQUIRED_MESSAGE = 'Authentication is required.';
+const MFA_REQUIRED_MESSAGE = 'Two-factor authentication must be completed first.';
+
+/**
+ * Marks the only handlers a pending-MFA session may reach (D10).
+ *
+ * Opt-in on purpose: a new route is closed to a pending session until someone
+ * says otherwise, so forgetting the metadata fails safe.
+ */
+export const MFA_PENDING_KEY = 'auth:mfa-pending-allowed';
+
+export function AllowPendingMfa(): MethodDecorator {
+  return SetMetadata(MFA_PENDING_KEY, true);
+}
 
 /** How the token arrived. A dashboard token is only accepted as a cookie. */
 type Channel = 'cookie' | 'bearer';
@@ -60,7 +86,13 @@ export class SessionGuard implements CanActivate {
     }
 
     const found = await getPool().query<SessionRow>(
-      'SELECT s.id, s.user_id, s.kind' +
+      'SELECT s.id, s.user_id, s.kind, s.mfa_state,' +
+        ' EXISTS (SELECT 1 FROM venue_memberships m' +
+        '   WHERE m.user_id = s.user_id AND m.active = true AND m.role = ANY($2::text[]))' +
+        '   AS mfa_gated,' +
+        ' EXISTS (SELECT 1 FROM user_mfa_factors f' +
+        "   WHERE f.user_id = s.user_id AND f.type = 'totp' AND f.confirmed_at IS NOT NULL)" +
+        '   AS mfa_enrolled' +
         ' FROM sessions s' +
         ' JOIN users u ON u.id = s.user_id' +
         ' WHERE s.token_hash = $1' +
@@ -68,7 +100,7 @@ export class SessionGuard implements CanActivate {
         ' AND s.idle_expires_at > now()' +
         ' AND s.absolute_expires_at > now()' +
         ' AND u.deleted_at IS NULL',
-      [hashToken(presented.token)],
+      [hashToken(presented.token), MFA_GATED_ROLES],
     );
 
     const row = found.rows[0];
@@ -78,12 +110,32 @@ export class SessionGuard implements CanActivate {
 
     // A dashboard token is issued to a browser inside an HttpOnly cookie. If it
     // is presented as a bearer it is being used outside the shape it was issued
-    // for, so it is refused rather than widening the credential surface.
+    // for, so it is refused rather than widening the credential surface. The
+    // inverse is refused for the same reason: a mobile token placed in the
+    // dashboard cookie must not silently become a cookie session.
     if (row.kind === 'dashboard' && presented.channel === 'bearer') {
       throw required();
     }
+    if (row.kind === 'mobile' && presented.channel === 'cookie') {
+      throw required();
+    }
 
-    req.auth = { sessionId: row.id, userId: row.user_id, kind: row.kind };
+    // A session that stopped at the second factor may only finish that step.
+    // The gate is evaluated per request, not only at login: a membership granted
+    // mid-session (or a factor deleted out from under an active session) must not
+    // leave an unverified session with privileged reach. The check runs before
+    // the handler and before the idle touch.
+    const gated = row.mfa_state === 'pending' || (row.mfa_gated && !row.mfa_enrolled);
+    if (gated && Reflect.getMetadata(MFA_PENDING_KEY, context.getHandler()) !== true) {
+      throw mfaRequired();
+    }
+
+    req.auth = {
+      sessionId: row.id,
+      userId: row.user_id,
+      kind: row.kind,
+      mfaState: row.mfa_state,
+    };
 
     await this.touch(http.getResponse<Response>(), row, presented);
     return true;
@@ -132,4 +184,8 @@ function extractToken(req: RequestLike): Presented | undefined {
 
 function required(): AuthHttpError {
   return new AuthHttpError(HttpStatus.UNAUTHORIZED, 'AUTH_REQUIRED', REQUIRED_MESSAGE);
+}
+
+function mfaRequired(): AuthHttpError {
+  return new AuthHttpError(HttpStatus.FORBIDDEN, 'AUTH_MFA_REQUIRED', MFA_REQUIRED_MESSAGE);
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { DevAuthModule } from './auth/dev.module';
 import { HealthModule } from './health/health.module';
+import { VenuesModule } from './venues/venues.module';
 
 // The development-only routes are not merely guarded, they are not registered:
 // outside development DevAuthModule is never imported, so /v1/dev/* does not
@@ -9,6 +10,6 @@ import { HealthModule } from './health/health.module';
 const devImports = process.env.NODE_ENV === 'development' ? [DevAuthModule] : [];
 
 @Module({
-  imports: [HealthModule, AuthModule, ...devImports],
+  imports: [HealthModule, AuthModule, VenuesModule, ...devImports],
 })
 export class AppModule {}

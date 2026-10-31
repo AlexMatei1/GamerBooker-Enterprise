@@ -132,6 +132,26 @@ export function validateVerify(body: unknown): VerifyInput {
   return { token };
 }
 
+/** A TOTP code is exactly six digits. No length or shape detail is echoed. */
+export const MFA_CODE_RE = /^[0-9]{6}$/;
+
+export interface MfaCodeInput {
+  code: string;
+}
+
+export function validateMfaCode(body: unknown): MfaCodeInput {
+  const issues: FieldIssue[] = [];
+  const record = asRecord(body);
+  const raw = typeof record.code === 'string' ? record.code.trim() : '';
+  if (raw.length === 0) {
+    issues.push({ field: 'code', kind: 'required' });
+  } else if (!MFA_CODE_RE.test(raw)) {
+    issues.push({ field: 'code', kind: 'format' });
+  }
+  throwIf(issues);
+  return { code: raw };
+}
+
 export function sessionKindOf(raw: unknown, issues: FieldIssue[]): SessionKind {
   if (raw === undefined || raw === null) {
     return 'dashboard';

@@ -20,6 +20,9 @@ interface ExceptionBody {
 
 const GENERIC_500 = 'Internal server error.';
 
+/** 423 Locked: not a member of Nest's HttpStatus enum, but the honest status. */
+const HTTP_LOCKED = 423;
+
 const BY_STATUS: Record<number, MappedError> = {
   [HttpStatus.BAD_REQUEST]: { code: 'VALIDATION_ERROR', message: 'The request is invalid.' },
   [HttpStatus.UNAUTHORIZED]: { code: 'AUTH_REQUIRED', message: 'Authentication is required.' },
@@ -63,9 +66,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const mapped = mappingFor(status, exception);
 
-    // 429 is the one status where the client is told how long to wait, and the
-    // header must agree with the envelope's retry_after_seconds.
-    if (status === HttpStatus.TOO_MANY_REQUESTS) {
+    // 429 and 423 are the two statuses where the client is told how long to
+    // wait, and the header must agree with the envelope's retry_after_seconds.
+    if (status === HttpStatus.TOO_MANY_REQUESTS || status === HTTP_LOCKED) {
       const retryAfter = mapped.details?.retry_after_seconds;
       if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
         res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfter))));
@@ -74,7 +77,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     res.status(status).json(
       buildError(mapped.code, mapped.message, requestId, {
-        retryable: status === HttpStatus.TOO_MANY_REQUESTS || status >= 500,
+        retryable:
+          status === HttpStatus.TOO_MANY_REQUESTS ||
+          status === HTTP_LOCKED ||
+          status >= 500,
         ...(mapped.details !== undefined ? { details: mapped.details } : {}),
       }),
     );

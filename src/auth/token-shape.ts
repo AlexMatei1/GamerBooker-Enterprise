@@ -15,6 +15,8 @@ export interface AuthContext {
   sessionId: string;
   userId: string;
   kind: 'mobile' | 'dashboard';
+  /** 'pending' until the second factor is proven; the guard gates on it. */
+  mfaState: 'pending' | 'active';
 }
 
 export function isTokenShaped(value: unknown): value is string {

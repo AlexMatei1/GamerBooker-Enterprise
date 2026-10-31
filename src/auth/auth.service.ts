@@ -1,13 +1,15 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { getPool } from '../db/pool';
-import { getRequestId } from '../common/request-context';
 import {
   ABSOLUTE_TTL_MS,
+  HTTP_LOCKED,
   IDLE_TTL_MS,
   USERS_EMAIL_CONSTRAINT,
   VERIFICATION_TTL_MS,
 } from './auth.constants';
 import { AuthHttpError } from './auth-error';
+import { writeAudit } from './audit';
+import { MFA_GATED_ROLES } from './membership.service';
 import { hash as hashPassword, verify as verifyPassword, verifyDummy } from './password';
 import { hashToken, newSessionToken, newVerificationToken } from './tokens';
 import type { DeleteReason, LoginInput, RegisterInput, SessionKind } from './validation';
@@ -32,6 +34,10 @@ export interface LoginResult {
   userId: string;
   /** Idle expiry, the value the cookie Max-Age and the JSON body report. */
   expiresAt: Date;
+  /** 'pending' when the second factor still has to be proven (D2, D10). */
+  mfaState: 'pending' | 'active';
+  /** True when the user must enrol a factor before the session can activate. */
+  mfaEnrollmentRequired: boolean;
 }
 
 export interface MeMembership {
@@ -50,6 +56,7 @@ export interface SessionPrincipal {
   sessionId: string;
   userId: string;
   kind: SessionKind;
+  mfaState: 'pending' | 'active';
 }
 
 export interface DeleteAccountResult {
@@ -61,6 +68,12 @@ interface UserRow {
   email: string;
   password_hash: string | null;
   email_verified_at: Date | null;
+  /** True when an active membership in a gated role exists (D2). */
+  mfa_gated: boolean;
+  /** True when a confirmed TOTP factor exists. */
+  mfa_enrolled: boolean;
+  /** Set while the factor is locked after repeated failures (D11). */
+  mfa_locked_until: Date | null;
 }
 
 @Injectable()
@@ -92,7 +105,7 @@ export class AuthService {
           ' VALUES ($1, $2, $3, $4)',
         [userId, token.hash, 'email_verify', expiresAt],
       );
-      await this.writeAudit(client, 'auth.register', userId, {});
+      await writeAudit(client, 'auth.register', userId, {});
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -144,7 +157,7 @@ export class AuthService {
           ' VALUES ($1, $2, $3, $4)',
         [user.id, token.hash, 'email_verify', new Date(Date.now() + VERIFICATION_TTL_MS)],
       );
-      await this.writeAudit(client, 'auth.dev_verification_reissued', user.id, {});
+      await writeAudit(client, 'auth.dev_verification_reissued', user.id, {});
       await client.query('COMMIT');
       return { token: token.token };
     } catch (err) {
@@ -189,7 +202,7 @@ export class AuthService {
         'UPDATE verification_tokens SET consumed_at = now(), updated_at = now() WHERE id = $1',
         [row.id],
       );
-      await this.writeAudit(client, 'auth.verify_email', row.user_id, {});
+      await writeAudit(client, 'auth.verify_email', row.user_id, {});
       await client.query('COMMIT');
       userId = row.user_id;
     } catch (err) {
@@ -209,9 +222,19 @@ export class AuthService {
   async login(input: LoginInput): Promise<LoginResult> {
     const pool = getPool();
     const found = await pool.query<UserRow>(
-      'SELECT id, email, password_hash, email_verified_at FROM users ' +
-        ' WHERE lower(email) = $1 AND deleted_at IS NULL',
-      [input.email],
+      'SELECT u.id, u.email, u.password_hash, u.email_verified_at,' +
+        ' EXISTS (SELECT 1 FROM venue_memberships m' +
+        '   WHERE m.user_id = u.id AND m.active = true AND m.role = ANY($2::text[]))' +
+        '   AS mfa_gated,' +
+        ' EXISTS (SELECT 1 FROM user_mfa_factors f' +
+        "   WHERE f.user_id = u.id AND f.type = 'totp' AND f.confirmed_at IS NOT NULL)" +
+        '   AS mfa_enrolled,' +
+        ' (SELECT f.locked_until FROM user_mfa_factors f' +
+        "   WHERE f.user_id = u.id AND f.type = 'totp')" +
+        '   AS mfa_locked_until' +
+        ' FROM users u' +
+        ' WHERE lower(u.email) = $1 AND u.deleted_at IS NULL',
+      [input.email, MFA_GATED_ROLES],
     );
     const user = found.rows[0];
 
@@ -231,6 +254,21 @@ export class AuthService {
       throw new AuthHttpError(HttpStatus.FORBIDDEN, 'AUTH_EMAIL_UNVERIFIED', UNVERIFIED_MESSAGE);
     }
 
+    // Checked only after the password is correct, so a lockout never becomes an
+    // account-existence oracle. A fresh login does not escape the lock: the
+    // counter lives on the factor, not on the pending session. It applies to an
+    // unconfirmed factor too, otherwise a caller could skip the lock by starting
+    // enrolment again.
+    if (user.mfa_locked_until) {
+      const lockedMs = new Date(user.mfa_locked_until).getTime() - Date.now();
+      if (lockedMs > 0) {
+        throw accountLocked(Math.max(1, Math.ceil(lockedMs / 1000)));
+      }
+    }
+
+    const mfaPending = user.mfa_enrolled || user.mfa_gated;
+    const mfaState = mfaPending ? 'pending' : 'active';
+
     // A fresh token on every login: session fixation is impossible because no
     // caller-supplied value is ever adopted (ENG002-T06).
     const minted = newSessionToken();
@@ -242,10 +280,10 @@ export class AuthService {
       await client.query('BEGIN');
       await client.query(
         'INSERT INTO sessions (user_id, token_hash, kind, mfa_state, idle_expires_at, absolute_expires_at) ' +
-          " VALUES ($1, $2, $3, 'active', $4, $5)",
-        [user.id, minted.hash, input.kind, idleExpiresAt, absoluteExpiresAt],
+          ' VALUES ($1, $2, $3, $4, $5, $6)',
+        [user.id, minted.hash, input.kind, mfaState, idleExpiresAt, absoluteExpiresAt],
       );
-      await this.writeAudit(client, 'auth.login', user.id, { kind: input.kind });
+      await writeAudit(client, 'auth.login', user.id, { kind: input.kind, mfa_state: mfaState });
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -259,6 +297,8 @@ export class AuthService {
       kind: input.kind,
       userId: user.id,
       expiresAt: idleExpiresAt,
+      mfaState,
+      mfaEnrollmentRequired: mfaPending && !user.mfa_enrolled,
     };
   }
 
@@ -272,7 +312,7 @@ export class AuthService {
           ' WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL',
         [principal.sessionId, principal.userId],
       );
-      await this.writeAudit(client, 'auth.logout', principal.userId, {
+      await writeAudit(client, 'auth.logout', principal.userId, {
         revoked: (revoked.rowCount ?? 0) > 0,
       });
       await client.query('COMMIT');
@@ -321,7 +361,7 @@ export class AuthService {
         [principal.userId],
       );
       const count = revoked.rowCount ?? 0;
-      await this.writeAudit(client, 'auth.logout_all', principal.userId, { revoked: count });
+      await writeAudit(client, 'auth.logout_all', principal.userId, { revoked: count });
       await client.query('COMMIT');
       return count;
     } catch (err) {
@@ -390,7 +430,7 @@ export class AuthService {
       );
       const sessionsRevoked = revoked.rowCount ?? 0;
       // reason is a closed set of codes, never free text: see validation.ts.
-      await this.writeAudit(client, 'account.delete', user.id, {
+      await writeAudit(client, 'account.delete', user.id, {
         reason,
         sessions_revoked: sessionsRevoked,
       });
@@ -405,33 +445,23 @@ export class AuthService {
   }
 
   /**
-   * Append-only audit row. Metadata carries no email, phone, token or password:
-   * callers pass only non-identifying facts. Writes inside the caller's
-   * transaction so a failed business change cannot leave an orphan audit.
+   * Append-only audit rows are written by ./audit.ts, so this class and the MFA
+   * service cannot drift on the envelope, the request id rule or the PII rule.
    */
-  private async writeAudit(
-    db: DbExecutor,
-    action: string,
-    actorId: string,
-    metadata: Record<string, unknown>,
-  ): Promise<void> {
-    // request_id is NOT NULL in the schema, and it is the only way to tie an
-    // audit row to the request that caused it. An out-of-request caller must
-    // pass an explicit id rather than write a row nobody can correlate.
-    const requestId = getRequestId();
-    if (!requestId) {
-      throw new Error('audit write outside a request context: no request id');
-    }
-    await db.query(
-      'INSERT INTO audit_events (actor_id, action, metadata, request_id)' +
-        ' VALUES ($1, $2, $3::jsonb, $4)',
-      [actorId, action, JSON.stringify(metadata), requestId],
-    );
-  }
 }
 
 function invalidCredentials(): AuthHttpError {
   return new AuthHttpError(HttpStatus.UNAUTHORIZED, 'AUTH_INVALID_CREDENTIALS', GENERIC_CREDENTIALS);
+}
+
+/** 423 with a concrete wait, so the client does not have to guess. */
+function accountLocked(retryAfterSeconds: number): AuthHttpError {
+  return new AuthHttpError(
+    HTTP_LOCKED,
+    'AUTH_ACCOUNT_LOCKED',
+    'Too many verification attempts; this account is temporarily locked.',
+    { retry_after_seconds: retryAfterSeconds },
+  );
 }
 
 function invalidInvitation(): AuthHttpError {

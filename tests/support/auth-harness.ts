@@ -91,6 +91,10 @@ export async function startTestApp(dbSuffix: string): Promise<TestApp> {
   // DevAuthModule is imported only in development; the suites need the dev
   // delivery path to obtain a verification token (HANDOFF-ENG-002 D1).
   process.env.NODE_ENV = 'development';
+  // D5: the TOTP secret is encrypted with a key from the environment, and
+  // MfaService refuses to start without one, so it is set before the module is
+  // imported.
+  process.env.MFA_SECRET_KEY = 'test-mfa-key-0123456789abcdef0123456789';
 
   const migrationsDir = join(__dirname, '..', '..', 'migrations');
   const files = readdirSync(migrationsDir)

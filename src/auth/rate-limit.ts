@@ -63,6 +63,17 @@ export const DELETE_ACCOUNT_LIMIT: RateLimitPolicy = {
   windowMs: 60 * MINUTE,
 };
 
+/**
+ * MFA code attempts per user. The factor lockout is the real control; this
+ * bucket only bounds the work an unauthenticated-ish caller can force before
+ * the lock bites, and it is keyed by the authenticated user id.
+ */
+export const MFA_VERIFY_LIMIT: RateLimitPolicy = {
+  name: 'mfa-verify',
+  limit: 10,
+  windowMs: 5 * MINUTE,
+};
+
 interface Window {
   startedAt: number;
   hits: number;

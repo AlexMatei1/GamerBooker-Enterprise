@@ -11,9 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthHttpError, validationError } from './auth-error';
+import { AuthHttpError } from './auth-error';
 import { clearedCookie, sessionCookie } from './cookies';
 import { AuthService, type SessionPrincipal } from './auth.service';
+import { countAttempt, parse } from './http-helpers';
 import {
   addressOf,
   DELETE_ACCOUNT_LIMIT,
@@ -21,7 +22,6 @@ import {
   LOGIN_FAILURE_LIMIT,
   REGISTER_ADDRESS_LIMIT,
   RateLimiter,
-  type RateLimitPolicy,
   VERIFY_ADDRESS_LIMIT,
 } from './rate-limit';
 import { SessionGuard } from './session.guard';
@@ -30,29 +30,10 @@ import {
   validateLogin,
   validateRegister,
   validateVerify,
-  ValidationFailure,
 } from './validation';
 
 interface AuthedRequest extends Request {
   auth?: SessionPrincipal;
-}
-
-/** Counts one attempt against a policy, refusing it once the window is spent. */
-function countAttempt(limiter: RateLimiter, policy: RateLimitPolicy, key: string): void {
-  limiter.assertAllowed(policy, key);
-  limiter.record(policy, key);
-}
-
-/** Maps a hand-rolled validation failure onto the standard envelope. */
-function parse<T>(validate: () => T): T {
-  try {
-    return validate();
-  } catch (err) {
-    if (err instanceof ValidationFailure) {
-      throw validationError(err.issues);
-    }
-    throw err;
-  }
 }
 
 @Controller('auth')
@@ -113,12 +94,18 @@ export class AuthController {
 
     // Dashboard sessions live in an HttpOnly cookie and the token is never
     // returned to JavaScript. Mobile clients get the token in the body.
+    const mfa = {
+      mfa_required: result.mfaState === 'pending',
+      mfa_enrollment_required: result.mfaEnrollmentRequired,
+    };
+
     if (result.kind === 'dashboard') {
       res.setHeader('Set-Cookie', sessionCookie(result.token));
       return {
         user_id: result.userId,
         kind: result.kind,
         expires_at: result.expiresAt.toISOString(),
+        ...mfa,
       };
     }
 
@@ -127,6 +114,7 @@ export class AuthController {
       kind: result.kind,
       token: result.token,
       expires_at: result.expiresAt.toISOString(),
+      ...mfa,
     };
   }
 
