@@ -7,12 +7,14 @@ import { PricingService } from './pricing.service';
 import { QuotesService } from './quotes.service';
 import { HoldsService } from './holds.service';
 import { BookingsService } from './bookings.service';
+import { CheckoutService } from './checkout.service';
 import { SchedulesController } from './schedules.controller';
 import { AvailabilityController } from './availability.controller';
 import { PoliciesController } from './policies.controller';
 import { QuotesController } from './quotes.controller';
 import { HoldsController } from './holds.controller';
 import { BookingsController } from './bookings.controller';
+import { CheckoutController } from './checkout.controller';
 
 @Module({
   imports: [AuthModule],
@@ -23,6 +25,7 @@ import { BookingsController } from './bookings.controller';
     QuotesController,
     HoldsController,
     BookingsController,
+    CheckoutController,
   ],
   providers: [
     SchedulesService,
@@ -32,6 +35,7 @@ import { BookingsController } from './bookings.controller';
     QuotesService,
     HoldsService,
     BookingsService,
+    CheckoutService,
   ],
   exports: [
     SchedulesService,
@@ -41,6 +45,7 @@ import { BookingsController } from './bookings.controller';
     QuotesService,
     HoldsService,
     BookingsService,
+    CheckoutService,
   ],
 })
 export class BookingsModule {}
