@@ -3,14 +3,34 @@ import { AuthModule } from '../auth/auth.module';
 import { SchedulesService } from './schedules.service';
 import { AvailabilityService } from './availability.service';
 import { PoliciesService } from './policies.service';
+import { PricingService } from './pricing.service';
+import { QuotesService } from './quotes.service';
 import { SchedulesController } from './schedules.controller';
 import { AvailabilityController } from './availability.controller';
 import { PoliciesController } from './policies.controller';
+import { QuotesController } from './quotes.controller';
 
 @Module({
   imports: [AuthModule],
-  controllers: [SchedulesController, AvailabilityController, PoliciesController],
-  providers: [SchedulesService, AvailabilityService, PoliciesService],
-  exports: [SchedulesService, AvailabilityService, PoliciesService],
+  controllers: [
+    SchedulesController,
+    AvailabilityController,
+    PoliciesController,
+    QuotesController,
+  ],
+  providers: [
+    SchedulesService,
+    AvailabilityService,
+    PoliciesService,
+    PricingService,
+    QuotesService,
+  ],
+  exports: [
+    SchedulesService,
+    AvailabilityService,
+    PoliciesService,
+    PricingService,
+    QuotesService,
+  ],
 })
 export class BookingsModule {}
