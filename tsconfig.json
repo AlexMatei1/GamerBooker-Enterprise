@@ -23,7 +23,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "incremental": true
+    "incremental": false
   },
   "include": ["src/**/*", "test/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
