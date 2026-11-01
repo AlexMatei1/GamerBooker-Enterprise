@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { SchedulesService } from './schedules.service';
 import { AvailabilityService } from './availability.service';
 import { PoliciesService } from './policies.service';
@@ -21,7 +22,7 @@ import { LifecycleController } from './lifecycle.controller';
 import { GroupController } from './group.controller';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, PaymentsModule],
   controllers: [
     SchedulesController,
     AvailabilityController,

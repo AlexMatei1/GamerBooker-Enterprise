@@ -6,6 +6,8 @@ import type {
   PaymentProvider,
   CreateIntentInput,
   IntentResult,
+  RefundInput,
+  RefundResult,
   VerifiedProviderEvent,
 } from './payment-provider.interface';
 
@@ -15,6 +17,8 @@ export interface PaymentIntentRow {
   venue_id: string;
   booking_id: string | null;
   order_id: string | null;
+  group_booking_id?: string | null;
+  group_participant_id?: string | null;
   provider: string;
   provider_ref: string;
   idempotency_key: string;
@@ -37,9 +41,14 @@ export interface WebhookProcessResult {
 @Injectable()
 export class PaymentsService {
   private readonly providers: Map<string, PaymentProvider> = new Map();
+  private readonly paymentCaptureHandlers: Array<(intent: PaymentIntentRow) => Promise<void>> = [];
 
   constructor(private readonly sandboxProvider: SandboxPaymentProvider) {
     this.registerProvider(sandboxProvider);
+  }
+
+  onPaymentCaptured(handler: (intent: PaymentIntentRow) => Promise<void>): void {
+    this.paymentCaptureHandlers.push(handler);
   }
 
   registerProvider(provider: PaymentProvider): void {
@@ -63,6 +72,8 @@ export class PaymentsService {
     venueId: string,
     input: CreateIntentInput,
     providerName: string = 'sandbox',
+    groupBookingId?: string | null,
+    groupParticipantId?: string | null,
   ): Promise<IntentResult & { intentId: string }> {
     const provider = this.getProvider(providerName);
     const pool = getPool();
@@ -85,8 +96,8 @@ export class PaymentsService {
 
     const inserted = await pool.query<{ id: string }>(
       `INSERT INTO payment_intents
-        (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata, group_booking_id, group_participant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         tenantId,
@@ -98,6 +109,8 @@ export class PaymentsService {
         input.currency,
         providerResult.status,
         JSON.stringify(input.metadata ?? {}),
+        groupBookingId || null,
+        groupParticipantId || null,
       ],
     );
 
@@ -105,6 +118,14 @@ export class PaymentsService {
       ...providerResult,
       intentId: inserted.rows[0].id,
     };
+  }
+
+  async refund(
+    input: RefundInput,
+    providerName: string = 'sandbox',
+  ): Promise<RefundResult> {
+    const provider = this.getProvider(providerName);
+    return provider.refund(input);
   }
 
   async getIntent(providerRef: string): Promise<PaymentIntentRow | null> {
@@ -194,6 +215,23 @@ export class PaymentsService {
       }
 
       await client.query('COMMIT');
+
+      if (targetStatus === 'CAPTURED') {
+        const updatedRes = await pool.query<PaymentIntentRow>(
+          'SELECT * FROM payment_intents WHERE provider_ref = $1',
+          [event.providerRef],
+        );
+        if (updatedRes.rows.length > 0) {
+          const row = updatedRes.rows[0];
+          for (const handler of this.paymentCaptureHandlers) {
+            try {
+              await handler(row);
+            } catch (handlerErr) {
+              console.error('Payment capture handler error:', handlerErr);
+            }
+          }
+        }
+      }
 
       return {
         eventId: event.eventId,

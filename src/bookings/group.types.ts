@@ -71,3 +71,39 @@ export interface GroupBookingDetail {
   all_participants_accepted: boolean;
   created_at: string;
 }
+
+export interface InitiateCheckoutResult {
+  group_booking: GroupBookingDetail;
+  hold_id: string;
+  expires_at: string;
+}
+
+export interface GroupPaymentIntentResult {
+  intent_id: string;
+  provider_ref: string;
+  client_secret?: string;
+  amount_minor: number;
+  currency: string;
+  participant_id: string;
+  group_booking_id: string;
+  status: string;
+}
+
+export interface PaymentCaptureResult {
+  confirmed: boolean;
+  group_booking_id: string;
+  booking_id?: string;
+  public_code?: string;
+  refunded?: boolean;
+  reason?: string;
+  all_due_paid: boolean;
+  total_paid_minor: number;
+  due_now_minor: number;
+}
+
+export interface ExpireGroupBookingResult {
+  group_booking_id: string;
+  expired: boolean;
+  refunded_count: number;
+  refunded_total_minor: number;
+}

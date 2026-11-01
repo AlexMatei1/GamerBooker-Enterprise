@@ -1,12 +1,19 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, OnModuleInit } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
+import { HoldsService } from './holds.service';
+import { BookingsService } from './bookings.service';
+import { PaymentsService, type PaymentIntentRow } from '../payments/payments.service';
 import type {
   CreateGroupBookingDto,
   AdjustSharesDto,
   GroupBookingDetail,
   GroupParticipantDetail,
+  InitiateCheckoutResult,
+  GroupPaymentIntentResult,
+  PaymentCaptureResult,
+  ExpireGroupBookingResult,
 } from './group.types';
 
 function notFound(code: string, message: string): AuthHttpError {
@@ -59,7 +66,20 @@ export function calculateEqualShares(
 }
 
 @Injectable()
-export class GroupService {
+export class GroupService implements OnModuleInit {
+  constructor(
+    private readonly holdsService: HoldsService,
+    private readonly bookingsService: BookingsService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
+
+  onModuleInit() {
+    this.paymentsService.onPaymentCaptured(async (intent) => {
+      if (intent.group_booking_id) {
+        await this.handlePaymentCaptured(intent.provider_ref);
+      }
+    });
+  }
   // ---------------------------------------------------------------------------
   // Create Group Booking & Share Allocation
   // ---------------------------------------------------------------------------
@@ -649,6 +669,588 @@ export class GroupService {
       return { declined: true };
     } catch (err) {
       await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-302: Initiate Group Checkout & Atomic Hold
+  // ---------------------------------------------------------------------------
+
+  async initiateCheckout(
+    callerUserId: string,
+    groupBookingId: string,
+    requestId?: string,
+  ): Promise<InitiateCheckoutResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const gb = await this.getGroupBooking(callerUserId, groupBookingId, false);
+
+    if (gb.organizer_id !== callerUserId) {
+      throw forbidden('NOT_GROUP_ORGANIZER', 'Only the group organizer can initiate checkout');
+    }
+
+    if (gb.status === 'CONFIRMED') {
+      throw conflict('GROUP_ALREADY_CONFIRMED', 'Group booking has already been confirmed');
+    }
+
+    if (gb.status === 'CANCELLED' || gb.status === 'EXPIRED') {
+      throw conflict('INVALID_GROUP_STATUS', `Cannot initiate checkout for group booking in status '${gb.status}'`);
+    }
+
+    if (gb.mode === 'SPLIT_BY_PARTICIPANT' && !gb.all_participants_accepted) {
+      throw badRequest(
+        'PENDING_INVITATIONS_EXIST',
+        'All invited participants must accept their invitations before checkout can be initiated',
+      );
+    }
+
+    let holdId = gb.hold_id;
+    let expiresAt = gb.expires_at;
+
+    if (!holdId) {
+      const holdResult = await this.holdsService.createHold(
+        gb.organizer_id,
+        { quote_id: gb.quote_id },
+        `gb-hold-${gb.id}`,
+      );
+      holdId = holdResult.id;
+      expiresAt = holdResult.expires_at;
+
+      await pool.query(
+        `UPDATE group_bookings
+         SET hold_id = $1, status = 'PENDING_PAYMENTS', expires_at = $2, updated_at = now()
+         WHERE id = $3`,
+        [holdId, expiresAt, gb.id],
+      );
+
+      await pool.query(
+        `INSERT INTO audit_events (
+          tenant_id, venue_id, request_id, actor_id, actor_role,
+          action, target_type, target_id, metadata
+        ) VALUES ($1, $2, $3, $4, 'CUSTOMER', 'GROUP_CHECKOUT_INITIATED', 'GROUP_BOOKING', $5, $6)`,
+        [
+          gb.tenant_id,
+          gb.venue_id,
+          reqId,
+          callerUserId,
+          gb.id,
+          JSON.stringify({ hold_id: holdId, expires_at: expiresAt }),
+        ],
+      );
+
+      await pool.query(
+        `INSERT INTO outbox_events (
+          tenant_id, aggregate_type, aggregate_id, event_type, payload
+        ) VALUES ($1, 'GroupBooking', $2, 'GroupCheckoutInitiated', $3)`,
+        [
+          gb.tenant_id,
+          gb.id,
+          JSON.stringify({ group_booking_id: gb.id, hold_id: holdId }),
+        ],
+      );
+    }
+
+    const updatedGb = await this.getGroupBooking(callerUserId, groupBookingId, false);
+    return {
+      group_booking: updatedGb,
+      hold_id: holdId,
+      expires_at: expiresAt,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-302: Per-Payer PSP Intent Creation
+  // ---------------------------------------------------------------------------
+
+  async createPaymentIntent(
+    callerUserId: string,
+    groupBookingId: string,
+    participantId?: string,
+    requestId?: string,
+  ): Promise<GroupPaymentIntentResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const gb = await this.getGroupBooking(callerUserId, groupBookingId, false);
+
+    if (gb.status !== 'PENDING_PAYMENTS') {
+      throw conflict('INVALID_GROUP_STATUS', `Group booking is in status '${gb.status}', checkout must be initiated first`);
+    }
+
+    if (new Date(gb.expires_at).getTime() <= Date.now()) {
+      throw conflict('GROUP_BOOKING_EXPIRED', 'Group booking checkout hold has expired');
+    }
+
+    let targetParticipant: GroupParticipantDetail | undefined;
+    let amountMinor = 0;
+
+    if (gb.mode === 'ORGANIZER_PAYS_ALL') {
+      if (gb.organizer_id !== callerUserId) {
+        throw forbidden('NOT_GROUP_ORGANIZER', 'Only organizer can create payment intent in ORGANIZER_PAYS_ALL mode');
+      }
+      targetParticipant = gb.participants.find((p) => p.is_organizer);
+      if (!targetParticipant) {
+        throw badRequest('ORGANIZER_PARTICIPANT_NOT_FOUND', 'Organizer participant record not found');
+      }
+      amountMinor = gb.due_now_minor;
+    } else {
+      if (participantId) {
+        targetParticipant = gb.participants.find((p) => p.id === participantId);
+        if (!targetParticipant) {
+          throw notFound('PARTICIPANT_NOT_FOUND', 'Participant not found in group booking');
+        }
+        if (targetParticipant.user_id !== callerUserId && gb.organizer_id !== callerUserId) {
+          throw forbidden('FORBIDDEN_PAYMENT', 'You cannot create payment intent for another participant');
+        }
+      } else {
+        targetParticipant = gb.participants.find((p) => p.user_id === callerUserId);
+        if (!targetParticipant) {
+          throw forbidden('FORBIDDEN_PAYMENT', 'You are not a registered participant in this group booking');
+        }
+      }
+
+      amountMinor = targetParticipant.share_due_now_minor;
+    }
+
+    if (targetParticipant.status === 'PAID') {
+      throw conflict('SHARE_ALREADY_PAID', 'Participant share is already fully paid');
+    }
+
+    if (amountMinor <= 0) {
+      throw badRequest('ZERO_DUE_NOW', 'No due-now payment required for this participant');
+    }
+
+    const idempotencyKey = `gb-pi-${gb.id}-${targetParticipant.id}-${amountMinor}`;
+
+    const intent = await this.paymentsService.createIntent(
+      gb.tenant_id,
+      gb.venue_id,
+      {
+        amountMinor,
+        currency: 'RON',
+        reference: `GroupBooking:${gb.id}:Participant:${targetParticipant.id}`,
+        idempotencyKey,
+        metadata: {
+          group_booking_id: gb.id,
+          group_participant_id: targetParticipant.id,
+          participant_user_id: targetParticipant.user_id,
+          organizer_id: gb.organizer_id,
+        },
+      },
+      'sandbox',
+      gb.id,
+      targetParticipant.id,
+    );
+
+    if (targetParticipant.status === 'ACCEPTED') {
+      await pool.query(
+        "UPDATE group_participants SET status = 'PAYING', updated_at = now() WHERE id = $1",
+        [targetParticipant.id],
+      );
+    }
+
+    return {
+      intent_id: intent.intentId,
+      provider_ref: intent.providerRef,
+      client_secret: intent.clientSecret,
+      amount_minor: amountMinor,
+      currency: 'RON',
+      participant_id: targetParticipant.id,
+      group_booking_id: gb.id,
+      status: intent.status,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-302: Payment Capture Hook & Atomic Completion Checks
+  // ---------------------------------------------------------------------------
+
+  async handlePaymentCaptured(
+    providerRef: string,
+    requestId?: string,
+  ): Promise<PaymentCaptureResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const piRes = await client.query<PaymentIntentRow>(
+        'SELECT * FROM payment_intents WHERE provider_ref = $1 FOR UPDATE',
+        [providerRef],
+      );
+      if (piRes.rows.length === 0) {
+        throw notFound('PAYMENT_INTENT_NOT_FOUND', 'Payment intent not found');
+      }
+      const pi = piRes.rows[0];
+
+      if (!pi.group_booking_id) {
+        await client.query('COMMIT');
+        return {
+          confirmed: false,
+          group_booking_id: '',
+          all_due_paid: false,
+          total_paid_minor: 0,
+          due_now_minor: 0,
+        };
+      }
+
+      const gbRes = await client.query<any>(
+        'SELECT * FROM group_bookings WHERE id = $1 FOR UPDATE',
+        [pi.group_booking_id],
+      );
+      if (gbRes.rows.length === 0) {
+        throw notFound('GROUP_BOOKING_NOT_FOUND', 'Group booking not found');
+      }
+      const gb = gbRes.rows[0];
+
+      // TTL Expiry check: PSP confirm after TTL -> refund without resurrection
+      const isExpired =
+        gb.status === 'EXPIRED' ||
+        gb.status === 'CANCELLED' ||
+        new Date(gb.expires_at).getTime() <= Date.now();
+
+      if (isExpired) {
+        await client.query(
+          "UPDATE payment_intents SET status = 'CAPTURED', updated_at = now() WHERE id = $1",
+          [pi.id],
+        );
+
+        const refundResult = await this.paymentsService.refund({
+          providerRef: pi.provider_ref,
+          amountMinor: Number(pi.amount_minor),
+          idempotencyKey: `refund-post-ttl-${pi.id}`,
+          reason: 'PSP_CONFIRM_AFTER_TTL_REFUND',
+        });
+
+        const refundInsert = await client.query<{ id: string }>(
+          `INSERT INTO refunds (
+            tenant_id, venue_id, group_booking_id, payment_intent_id,
+            customer_id, amount_minor, currency, status, reason, provider_ref
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'RON', 'SUCCEEDED', 'PSP_CONFIRM_AFTER_TTL_REFUND', $7)
+          RETURNING id`,
+          [
+            gb.tenant_id,
+            gb.venue_id,
+            gb.id,
+            pi.id,
+            (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+            pi.amount_minor,
+            refundResult.refundRef,
+          ],
+        );
+
+        await client.query(
+          `INSERT INTO audit_events (
+            tenant_id, venue_id, request_id, actor_id, actor_role,
+            action, target_type, target_id, metadata
+          ) VALUES ($1, $2, $3, $4, 'SYSTEM', 'GROUP_PAYMENT_REFUNDED_AFTER_TTL', 'GROUP_BOOKING', $5, $6)`,
+          [
+            gb.tenant_id,
+            gb.venue_id,
+            reqId,
+            gb.organizer_id,
+            gb.id,
+            JSON.stringify({
+              payment_intent_id: pi.id,
+              refund_id: refundInsert.rows[0].id,
+              amount_minor: Number(pi.amount_minor),
+            }),
+          ],
+        );
+
+        await client.query(
+          `INSERT INTO outbox_events (
+            tenant_id, aggregate_type, aggregate_id, event_type, payload
+          ) VALUES ($1, 'GroupBooking', $2, 'GroupBookingPaymentRefundedPostExpiry', $3)`,
+          [
+            gb.tenant_id,
+            gb.id,
+            JSON.stringify({
+              group_booking_id: gb.id,
+              payment_intent_id: pi.id,
+              amount_minor: Number(pi.amount_minor),
+            }),
+          ],
+        );
+
+        await client.query('COMMIT');
+        return {
+          confirmed: false,
+          group_booking_id: gb.id,
+          refunded: true,
+          reason: 'GROUP_BOOKING_EXPIRED',
+          all_due_paid: false,
+          total_paid_minor: 0,
+          due_now_minor: Number(gb.due_now_minor),
+        };
+      }
+
+      if (gb.status === 'CONFIRMED') {
+        const bRes = await client.query<{ public_code: string }>(
+          'SELECT public_code FROM bookings WHERE id = $1',
+          [gb.booking_id],
+        );
+        await client.query('COMMIT');
+        return {
+          confirmed: true,
+          group_booking_id: gb.id,
+          booking_id: gb.booking_id,
+          public_code: bRes.rows[0]?.public_code,
+          all_due_paid: true,
+          total_paid_minor: Number(gb.due_now_minor),
+          due_now_minor: Number(gb.due_now_minor),
+        };
+      }
+
+      const wasAlreadyCaptured = pi.status === 'CAPTURED';
+      if (!wasAlreadyCaptured) {
+        // Mark participant paid if applicable
+        if (pi.group_participant_id) {
+          await client.query(
+            `UPDATE group_participants
+             SET share_paid_minor = share_paid_minor + $1,
+                 status = 'PAID',
+                 updated_at = now()
+             WHERE id = $2`,
+            [pi.amount_minor, pi.group_participant_id],
+          );
+        }
+
+        // Also ensure payment intent status is CAPTURED
+        await client.query(
+          "UPDATE payment_intents SET status = 'CAPTURED', updated_at = now() WHERE id = $1",
+          [pi.id],
+        );
+      }
+
+      // Check sum of paid shares
+      const sumRes = await client.query<{ total_paid: string }>(
+        'SELECT COALESCE(SUM(share_paid_minor), 0) as total_paid FROM group_participants WHERE group_booking_id = $1',
+        [gb.id],
+      );
+      const totalPaid = Number(sumRes.rows[0]?.total_paid || 0);
+      const dueNow = Number(gb.due_now_minor);
+
+      const allDuePaid = totalPaid >= dueNow;
+
+      if (!allDuePaid) {
+        await client.query('COMMIT');
+        return {
+          confirmed: false,
+          group_booking_id: gb.id,
+          all_due_paid: false,
+          total_paid_minor: totalPaid,
+          due_now_minor: dueNow,
+        };
+      }
+
+      // Confirm booking via BookingsService
+      const confirmedBooking = await this.bookingsService.confirmBooking(
+        gb.organizer_id,
+        { hold_id: gb.hold_id },
+        `gb-confirm-${gb.id}`,
+        reqId,
+      );
+
+      await client.query(
+        `UPDATE group_bookings
+         SET status = 'CONFIRMED', booking_id = $1, updated_at = now()
+         WHERE id = $2`,
+        [confirmedBooking.id, gb.id],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+          tenant_id, venue_id, request_id, actor_id, actor_role,
+          action, target_type, target_id, metadata
+        ) VALUES ($1, $2, $3, $4, 'SYSTEM', 'GROUP_BOOKING_CONFIRMED', 'GROUP_BOOKING', $5, $6)`,
+        [
+          gb.tenant_id,
+          gb.venue_id,
+          reqId,
+          gb.organizer_id,
+          gb.id,
+          JSON.stringify({
+            booking_id: confirmedBooking.id,
+            public_code: confirmedBooking.public_code,
+            total_paid_minor: totalPaid,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+          tenant_id, aggregate_type, aggregate_id, event_type, payload
+        ) VALUES ($1, 'GroupBooking', $2, 'GroupBookingConfirmed', $3)`,
+        [
+          gb.tenant_id,
+          gb.id,
+          JSON.stringify({
+            group_booking_id: gb.id,
+            booking_id: confirmedBooking.id,
+            public_code: confirmedBooking.public_code,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        confirmed: true,
+        group_booking_id: gb.id,
+        booking_id: confirmedBooking.id,
+        public_code: confirmedBooking.public_code,
+        all_due_paid: true,
+        total_paid_minor: totalPaid,
+        due_now_minor: dueNow,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-302: Timeout Compensation / Expiry Reversals
+  // ---------------------------------------------------------------------------
+
+  async expireGroupBooking(
+    groupBookingId: string,
+    requestId?: string,
+  ): Promise<ExpireGroupBookingResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const gbRes = await client.query<any>(
+        'SELECT * FROM group_bookings WHERE id = $1 FOR UPDATE',
+        [groupBookingId],
+      );
+      if (gbRes.rows.length === 0) {
+        throw notFound('GROUP_BOOKING_NOT_FOUND', 'Group booking not found');
+      }
+      const gb = gbRes.rows[0];
+
+      if (gb.status === 'CONFIRMED') {
+        await client.query('COMMIT');
+        return {
+          group_booking_id: gb.id,
+          expired: false,
+          refunded_count: 0,
+          refunded_total_minor: 0,
+        };
+      }
+
+      await client.query(
+        "UPDATE group_bookings SET status = 'EXPIRED', updated_at = now() WHERE id = $1",
+        [gb.id],
+      );
+
+      if (gb.hold_id) {
+        await client.query(
+          "UPDATE holds SET status = 'EXPIRED', updated_at = now() WHERE id = $1",
+          [gb.hold_id],
+        );
+        await client.query(
+          "UPDATE resource_claims SET state = 'RELEASED', updated_at = now() WHERE hold_id = $1",
+          [gb.hold_id],
+        );
+      }
+
+      await client.query(
+        "UPDATE group_participants SET status = 'EXPIRED', updated_at = now() WHERE group_booking_id = $1 AND status != 'DECLINED'",
+        [gb.id],
+      );
+
+      const piRes = await client.query<PaymentIntentRow>(
+        "SELECT * FROM payment_intents WHERE group_booking_id = $1 AND status = 'CAPTURED'",
+        [gb.id],
+      );
+
+      let refundedCount = 0;
+      let refundedTotal = 0;
+
+      for (const pi of piRes.rows) {
+        const amt = Number(pi.amount_minor);
+        const refundRes = await this.paymentsService.refund({
+          providerRef: pi.provider_ref,
+          amountMinor: amt,
+          idempotencyKey: `timeout-refund-${pi.id}`,
+          reason: 'GROUP_BOOKING_TIMEOUT_EXPIRED',
+        });
+
+        await client.query(
+          `INSERT INTO refunds (
+            tenant_id, venue_id, group_booking_id, payment_intent_id,
+            customer_id, amount_minor, currency, status, reason, provider_ref
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'RON', 'SUCCEEDED', 'GROUP_BOOKING_TIMEOUT_EXPIRED', $7)`,
+          [
+            gb.tenant_id,
+            gb.venue_id,
+            gb.id,
+            pi.id,
+            (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+            amt,
+            refundRes.refundRef,
+          ],
+        );
+
+        refundedCount++;
+        refundedTotal += amt;
+      }
+
+      await client.query(
+        `INSERT INTO audit_events (
+          tenant_id, venue_id, request_id, actor_id, actor_role,
+          action, target_type, target_id, metadata
+        ) VALUES ($1, $2, $3, $4, 'SYSTEM', 'GROUP_BOOKING_TIMEOUT_EXPIRED', 'GROUP_BOOKING', $5, $6)`,
+        [
+          gb.tenant_id,
+          gb.venue_id,
+          reqId,
+          gb.organizer_id,
+          gb.id,
+          JSON.stringify({
+            refunded_count: refundedCount,
+            refunded_total_minor: refundedTotal,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+          tenant_id, aggregate_type, aggregate_id, event_type, payload
+        ) VALUES ($1, 'GroupBooking', $2, 'GroupBookingExpiredRefund', $3)`,
+        [
+          gb.tenant_id,
+          gb.id,
+          JSON.stringify({
+            group_booking_id: gb.id,
+            refunded_count: refundedCount,
+            refunded_total_minor: refundedTotal,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        group_booking_id: gb.id,
+        expired: true,
+        refunded_count: refundedCount,
+        refunded_total_minor: refundedTotal,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
       throw err;
     } finally {
       client.release();

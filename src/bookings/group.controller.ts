@@ -141,4 +141,76 @@ export class GroupController {
     const result = await this.groupService.declineInvitation(body.token, requestId, callerUserId);
     return result;
   }
+
+  // ---------------------------------------------------------------------------
+  // ENG-302: Checkout, Payment Intents & Expiry Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Post(':id/checkout/initiate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  async initiateCheckout(
+    @Param('id') id: string,
+    @Req() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    const principal = req.auth as SessionPrincipal;
+    const requestId = (req.headers['x-request-id'] as string) || '';
+    const checkout = await this.groupService.initiateCheckout(principal.userId, id, requestId);
+    return { checkout };
+  }
+
+  @Post(':id/payment-intent')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SessionGuard)
+  async createPaymentIntent(
+    @Param('id') id: string,
+    @Body() body: { participant_id?: string },
+    @Req() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    const principal = req.auth as SessionPrincipal;
+    const requestId = (req.headers['x-request-id'] as string) || '';
+    const paymentIntent = await this.groupService.createPaymentIntent(
+      principal.userId,
+      id,
+      body?.participant_id,
+      requestId,
+    );
+    return { payment_intent: paymentIntent };
+  }
+
+  @Post(':id/expire')
+  @HttpCode(HttpStatus.OK)
+  async expireGroupBooking(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    const requestId = (req.headers['x-request-id'] as string) || '';
+    const result = await this.groupService.expireGroupBooking(id, requestId);
+    return { result };
+  }
+
+  @Post('payments/capture')
+  @HttpCode(HttpStatus.OK)
+  async capturePayment(
+    @Body() body: { provider_ref: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!body?.provider_ref) {
+      throw new BadRequestException({
+        code: 'MISSING_PROVIDER_REF',
+        message: 'Must provide provider_ref',
+      });
+    }
+    const requestId = (req.headers['x-request-id'] as string) || '';
+    const result = await this.groupService.handlePaymentCaptured(body.provider_ref, requestId);
+    return { result };
+  }
 }
