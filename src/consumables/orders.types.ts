@@ -103,11 +103,39 @@ export interface OrderDetail {
   payment_status?: string;
   age_verified_by: string | null;
   age_verified_at: string | null;
+  accepted_by?: string | null;
+  accepted_at?: string | null;
+  prepared_by?: string | null;
+  prepared_at?: string | null;
+  ready_at?: string | null;
+  handed_off_by?: string | null;
+  handed_off_at?: string | null;
+  estimated_prep_minutes?: number;
+  sla_status?: 'ON_TIME' | 'OVERDUE';
+  age_minutes?: number;
   cancellation_reason: string | null;
   notes: string | null;
   items: OrderItemDetail[];
   created_at: string;
   updated_at: string;
+}
+
+export interface HandoffOrderInput {
+  pickup_code?: string;
+  age_verified?: boolean;
+}
+
+export interface RejectOrderInput {
+  reason: string;
+}
+
+export interface BarBoardSummary {
+  placed_count: number;
+  accepted_count: number;
+  preparing_count: number;
+  ready_count: number;
+  overdue_count: number;
+  queue: OrderDetail[];
 }
 
 export interface OrderFilterQuery {

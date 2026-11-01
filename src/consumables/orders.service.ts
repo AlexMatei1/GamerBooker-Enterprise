@@ -3,9 +3,11 @@ import { randomBytes, randomUUID } from 'crypto';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
 import { PaymentsService } from '../payments/payments.service';
+import { RefundsService } from '../payments/refunds.service';
 import type {
   OrderType,
   OrderStatus,
+  FulfillmentMode,
   ValidateCartInput,
   ValidateCartResult,
   CheckoutOrderInput,
@@ -14,6 +16,9 @@ import type {
   OrderItemDetail,
   OrderFilterQuery,
   OrderListResult,
+  BarBoardSummary,
+  HandoffOrderInput,
+  RejectOrderInput,
 } from './orders.types';
 
 // Crockford base32 alphabet (excludes I, L, O, U)
@@ -30,7 +35,10 @@ function generateCrockfordCode(prefix: string, length: number = 6): string {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly refundsService?: RefundsService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // Cart & Order Eligibility Validation
@@ -875,10 +883,565 @@ export class OrdersService {
   }
 
   // ---------------------------------------------------------------------------
+  // ENG-403: Bar Board Queue & Order State Machine
+  // ---------------------------------------------------------------------------
+
+  async getBarBoard(
+    venueId: string,
+    filter?: { fulfillment_mode?: FulfillmentMode; status?: OrderStatus },
+  ): Promise<BarBoardSummary> {
+    const pool = getPool();
+    const conditions = ["o.venue_id = $1 AND o.status IN ('PLACED', 'ACCEPTED', 'PREPARING', 'READY')"];
+    const params: any[] = [venueId];
+    let pIdx = 2;
+
+    if (filter?.fulfillment_mode) {
+      conditions.push(`o.fulfillment_mode = $${pIdx++}`);
+      params.push(filter.fulfillment_mode);
+    }
+    if (filter?.status) {
+      conditions.push(`o.status = $${pIdx++}`);
+      params.push(filter.status);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const query = `
+      SELECT o.*, b.public_code as booking_public_code, u.email as customer_email,
+             r.name as target_resource_name
+        FROM orders o
+        JOIN bookings b ON b.id = o.booking_id
+        LEFT JOIN users u ON u.id = o.customer_id
+        LEFT JOIN resources r ON r.id = o.target_resource_id
+       WHERE ${whereClause}
+       ORDER BY o.created_at ASC
+    `;
+    const res = await pool.query<any>(query, params);
+
+    const queue: OrderDetail[] = [];
+    let placedCount = 0;
+    let acceptedCount = 0;
+    let preparingCount = 0;
+    let readyCount = 0;
+    let overdueCount = 0;
+
+    for (const row of res.rows) {
+      const itemsRes = await pool.query<any>(
+        'SELECT * FROM order_items WHERE order_id = $1 ORDER BY title ASC',
+        [row.id],
+      );
+      const detail = this.mapOrderDetail(row, itemsRes.rows);
+      if (detail.status === 'PLACED') placedCount++;
+      else if (detail.status === 'ACCEPTED') acceptedCount++;
+      else if (detail.status === 'PREPARING') preparingCount++;
+      else if (detail.status === 'READY') readyCount++;
+
+      if (detail.sla_status === 'OVERDUE') overdueCount++;
+      queue.push(detail);
+    }
+
+    return {
+      placed_count: placedCount,
+      accepted_count: acceptedCount,
+      preparing_count: preparingCount,
+      ready_count: readyCount,
+      overdue_count: overdueCount,
+      queue,
+    };
+  }
+
+  async acceptOrder(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (order.status !== 'PLACED') {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot accept order in status '${order.status}'. Expected 'PLACED'.`,
+        );
+      }
+
+      await client.query(
+        "UPDATE orders SET status = 'ACCEPTED', accepted_by = $1, accepted_at = now(), updated_at = now() WHERE id = $2",
+        [staffId, orderId],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_ACCEPTED', 'ORDER', $6, $7)`,
+        [order.tenant_id, venueId, reqId, staffId, staffRole, orderId, JSON.stringify({ public_code: order.public_code })],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderAccepted', $3)`,
+        [order.tenant_id, orderId, JSON.stringify({ order_id: orderId, public_code: order.public_code, status: 'ACCEPTED' })],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async prepareOrder(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (order.status !== 'ACCEPTED') {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot prepare order in status '${order.status}'. Expected 'ACCEPTED'.`,
+        );
+      }
+
+      await client.query(
+        "UPDATE orders SET status = 'PREPARING', prepared_by = $1, prepared_at = now(), updated_at = now() WHERE id = $2",
+        [staffId, orderId],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_PREPARING', 'ORDER', $6, $7)`,
+        [order.tenant_id, venueId, reqId, staffId, staffRole, orderId, JSON.stringify({ public_code: order.public_code })],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderPreparing', $3)`,
+        [order.tenant_id, orderId, JSON.stringify({ order_id: orderId, public_code: order.public_code, status: 'PREPARING' })],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markOrderReady(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (order.status !== 'PREPARING') {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot mark order ready in status '${order.status}'. Expected 'PREPARING'.`,
+        );
+      }
+
+      await client.query(
+        "UPDATE orders SET status = 'READY', ready_at = now(), updated_at = now() WHERE id = $1",
+        [orderId],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_READY', 'ORDER', $6, $7)`,
+        [order.tenant_id, venueId, reqId, staffId, staffRole, orderId, JSON.stringify({ public_code: order.public_code })],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderReady', $3)`,
+        [order.tenant_id, orderId, JSON.stringify({ order_id: orderId, public_code: order.public_code, status: 'READY' })],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async handoffOrder(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    input?: HandoffOrderInput,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      // Idempotency: if already HANDED_OFF, return immediately (do not duplicate stock deduction)
+      if (order.status === 'HANDED_OFF') {
+        await client.query('COMMIT');
+        return this.getOrderById(orderId);
+      }
+
+      if (!['READY', 'ACCEPTED'].includes(order.status)) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot handoff order in status '${order.status}'. Expected 'READY' or 'ACCEPTED'.`,
+        );
+      }
+
+      // Pickup code validation for counter pickups
+      if (order.fulfillment_mode === 'BAR_PICKUP') {
+        const cleanGiven = input?.pickup_code?.trim().toUpperCase();
+        const cleanActual = order.pickup_code?.trim().toUpperCase();
+        if (!cleanGiven || cleanGiven !== cleanActual) {
+          throw new AuthHttpError(
+            HttpStatus.BAD_REQUEST,
+            'INVALID_PICKUP_CODE',
+            'Pickup code is invalid or missing.',
+          );
+        }
+      }
+
+      // Check age verification requirement across items
+      const itemsRes = await client.query<any>(
+        `SELECT oi.*, p.inventory_tracking, p.stock_on_hand, p.stock_reserved
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = $1`,
+        [orderId],
+      );
+
+      const hasAgeRestricted = itemsRes.rows.some((i) => i.age_verification_required);
+      if (hasAgeRestricted && input?.age_verified !== true) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'AGE_VERIFICATION_REQUIRED',
+          'Staff age verification is required before handing off age-restricted items (Law 42/2024).',
+        );
+      }
+
+      // Atomic inventory deduction: decrement on_hand and reserved, log ORDER_DEDUCT movement
+      for (const item of itemsRes.rows) {
+        if (item.inventory_tracking) {
+          const qty = Number(item.quantity);
+          const currentOnHand = Number(item.stock_on_hand);
+          const newOnHand = Math.max(0, currentOnHand - qty);
+          const newReserved = Math.max(0, Number(item.stock_reserved) - qty);
+
+          await client.query(
+            'UPDATE products SET stock_on_hand = $1, stock_reserved = $2, updated_at = now() WHERE id = $3',
+            [newOnHand, newReserved, item.product_id],
+          );
+
+          await client.query(
+            `INSERT INTO stock_movements (
+               tenant_id, venue_id, product_id, movement_type, quantity_delta,
+               balance_after, actor_id, actor_role, reference, notes
+             ) VALUES ($1, $2, $3, 'ORDER_DEDUCT', $4, $5, $6, $7, $8, 'Order fulfilled and handed off')`,
+            [
+              order.tenant_id,
+              venueId,
+              item.product_id,
+              -qty,
+              newOnHand,
+              staffId,
+              staffRole,
+              order.public_code,
+            ],
+          );
+        }
+      }
+
+      // Update order status to HANDED_OFF
+      const ageVerifiedAt = hasAgeRestricted ? new Date() : null;
+      const ageVerifiedBy = hasAgeRestricted ? staffId : null;
+
+      await client.query(
+        `UPDATE orders
+            SET status = 'HANDED_OFF',
+                handed_off_by = $1,
+                handed_off_at = now(),
+                age_verified_by = COALESCE($2, age_verified_by),
+                age_verified_at = COALESCE($3, age_verified_at),
+                updated_at = now()
+          WHERE id = $4`,
+        [staffId, ageVerifiedBy, ageVerifiedAt, orderId],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_HANDED_OFF', 'ORDER', $6, $7)`,
+        [
+          order.tenant_id,
+          venueId,
+          reqId,
+          staffId,
+          staffRole,
+          orderId,
+          JSON.stringify({
+            public_code: order.public_code,
+            fulfillment_mode: order.fulfillment_mode,
+            age_verified: hasAgeRestricted,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderHandedOff', $3)`,
+        [
+          order.tenant_id,
+          orderId,
+          JSON.stringify({
+            order_id: orderId,
+            public_code: order.public_code,
+            status: 'HANDED_OFF',
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async rejectOrder(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    input: RejectOrderInput,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+
+    if (!input.reason || input.reason.trim().length === 0) {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'MISSING_REJECTION_REASON',
+        'Rejection reason is required.',
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (['HANDED_OFF', 'CANCELLED'].includes(order.status)) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot reject order in status '${order.status}'.`,
+        );
+      }
+
+      // 1. Release reserved stock
+      const itemsRes = await client.query<any>(
+        `SELECT oi.*, p.inventory_tracking, p.stock_on_hand
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = $1`,
+        [orderId],
+      );
+
+      for (const item of itemsRes.rows) {
+        if (item.inventory_tracking) {
+          const qty = Number(item.quantity);
+          await client.query(
+            'UPDATE products SET stock_reserved = GREATEST(0, stock_reserved - $1), updated_at = now() WHERE id = $2',
+            [qty, item.product_id],
+          );
+
+          await client.query(
+            `INSERT INTO stock_movements (
+               tenant_id, venue_id, product_id, movement_type, quantity_delta,
+               balance_after, actor_id, actor_role, reference, notes
+             ) VALUES ($1, $2, $3, 'RESERVATION_RELEASE', $4, $5, $6, $7, $8, $9)`,
+            [
+              order.tenant_id,
+              venueId,
+              item.product_id,
+              -qty,
+              item.stock_on_hand,
+              staffId,
+              staffRole,
+              order.public_code,
+              `Order rejected by staff: ${input.reason.trim()}`,
+            ],
+          );
+        }
+      }
+
+      // 2. Mark order CANCELLED
+      await client.query(
+        "UPDATE orders SET status = 'CANCELLED', cancellation_reason = $1, updated_at = now() WHERE id = $2",
+        [input.reason.trim(), orderId],
+      );
+
+      // 3. Initiate compensating refund if payment was already captured
+      if (order.payment_intent_id) {
+        if (this.refundsService) {
+          try {
+            await this.refundsService.requestRefund(
+              venueId,
+              staffId,
+              staffRole,
+              {
+                payment_intent_id: order.payment_intent_id,
+                amount_minor: Number(order.total_minor),
+                reason: `BAR_ORDER_REJECTED: ${input.reason.trim()}`,
+                idempotency_key: `refund-rej-${orderId}`,
+              },
+              reqId,
+            );
+          } catch (refundErr) {
+            console.error('Compensating refund error on order rejection:', refundErr);
+          }
+        }
+      }
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_REJECTED_REFUND_TRIGGERED', 'ORDER', $6, $7)`,
+        [
+          order.tenant_id,
+          venueId,
+          reqId,
+          staffId,
+          staffRole,
+          orderId,
+          JSON.stringify({ reason: input.reason.trim(), total_minor: order.total_minor }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderRejected', $3)`,
+        [
+          order.tenant_id,
+          orderId,
+          JSON.stringify({
+            order_id: orderId,
+            public_code: order.public_code,
+            reason: input.reason.trim(),
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Mapper
   // ---------------------------------------------------------------------------
 
   private mapOrderDetail(row: any, items: any[]): OrderDetail {
+    const ageMinutes = Math.round((Date.now() - new Date(row.created_at).getTime()) / 60000);
+    const estPrep = Number(row.estimated_prep_minutes || 10);
+    const isOverdue =
+      ['PLACED', 'ACCEPTED', 'PREPARING'].includes(row.status) &&
+      Date.now() - new Date(row.created_at).getTime() > estPrep * 60000;
+
     return {
       id: row.id,
       public_code: row.public_code,
@@ -900,6 +1463,16 @@ export class OrdersService {
       payment_status: row.payment_status || null,
       age_verified_by: row.age_verified_by || null,
       age_verified_at: row.age_verified_at ? new Date(row.age_verified_at).toISOString() : null,
+      accepted_by: row.accepted_by || null,
+      accepted_at: row.accepted_at ? new Date(row.accepted_at).toISOString() : null,
+      prepared_by: row.prepared_by || null,
+      prepared_at: row.prepared_at ? new Date(row.prepared_at).toISOString() : null,
+      ready_at: row.ready_at ? new Date(row.ready_at).toISOString() : null,
+      handed_off_by: row.handed_off_by || null,
+      handed_off_at: row.handed_off_at ? new Date(row.handed_off_at).toISOString() : null,
+      estimated_prep_minutes: estPrep,
+      sla_status: isOverdue ? 'OVERDUE' : 'ON_TIME',
+      age_minutes: ageMinutes,
       cancellation_reason: row.cancellation_reason || null,
       notes: row.notes || null,
       items: items.map((i) => ({

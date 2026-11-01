@@ -180,4 +180,144 @@ export class OrdersController {
       requestId,
     );
   }
+
+  // ===========================================================================
+  // ENG-403: Bar Board Queue & State Machine Mutations
+  // ===========================================================================
+
+  @Get('dashboard/venues/:venue_id/bar-board')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async getBarBoard(
+    @Param('venue_id') venueId: string,
+    @Query('fulfillment_mode') fulfillmentMode?: any,
+    @Query('status') status?: any,
+  ) {
+    return this.ordersService.getBarBoard(venueId, {
+      fulfillment_mode: fulfillmentMode,
+      status,
+    });
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/accept')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async acceptOrder(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.acceptOrder(venueId, orderId, staffId, staffRole, requestId);
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/prepare')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async prepareOrder(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.prepareOrder(venueId, orderId, staffId, staffRole, requestId);
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/ready')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async markOrderReady(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.markOrderReady(venueId, orderId, staffId, staffRole, requestId);
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/handoff')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async handoffOrder(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Body() body?: { pickup_code?: string; age_verified?: boolean },
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.handoffOrder(venueId, orderId, staffId, staffRole, body, requestId);
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async rejectOrder(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Body() body: { reason: string },
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.rejectOrder(venueId, orderId, staffId, staffRole, body, requestId);
+  }
 }
