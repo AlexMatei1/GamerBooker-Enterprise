@@ -9,6 +9,7 @@ import { HoldsService } from './holds.service';
 import { BookingsService } from './bookings.service';
 import { CheckoutService } from './checkout.service';
 import { LifecycleService } from './lifecycle.service';
+import { GroupService } from './group.service';
 import { SchedulesController } from './schedules.controller';
 import { AvailabilityController } from './availability.controller';
 import { PoliciesController } from './policies.controller';
@@ -17,6 +18,7 @@ import { HoldsController } from './holds.controller';
 import { BookingsController } from './bookings.controller';
 import { CheckoutController } from './checkout.controller';
 import { LifecycleController } from './lifecycle.controller';
+import { GroupController } from './group.controller';
 
 @Module({
   imports: [AuthModule],
@@ -29,6 +31,7 @@ import { LifecycleController } from './lifecycle.controller';
     BookingsController,
     CheckoutController,
     LifecycleController,
+    GroupController,
   ],
   providers: [
     SchedulesService,
@@ -40,6 +43,7 @@ import { LifecycleController } from './lifecycle.controller';
     BookingsService,
     CheckoutService,
     LifecycleService,
+    GroupService,
   ],
   exports: [
     SchedulesService,
@@ -51,6 +55,7 @@ import { LifecycleController } from './lifecycle.controller';
     BookingsService,
     CheckoutService,
     LifecycleService,
+    GroupService,
   ],
 })
 export class BookingsModule {}
