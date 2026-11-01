@@ -14,6 +14,9 @@ import type {
   GroupPaymentIntentResult,
   PaymentCaptureResult,
   ExpireGroupBookingResult,
+  DifferenceSummaryResult,
+  DifferenceSummaryParticipant,
+  PayDifferenceResult,
 } from './group.types';
 
 function notFound(code: string, message: string): AuthHttpError {
@@ -994,6 +997,69 @@ export class GroupService implements OnModuleInit {
           'SELECT public_code FROM bookings WHERE id = $1',
           [gb.booking_id],
         );
+
+        if (pi.status !== 'CAPTURED') {
+          await client.query(
+            "UPDATE payment_intents SET status = 'CAPTURED', updated_at = now() WHERE id = $1",
+            [pi.id],
+          );
+
+          const refundRes = await this.paymentsService.refund({
+            providerRef: pi.provider_ref,
+            amountMinor: Number(pi.amount_minor),
+            idempotencyKey: `refund-already-covered-${pi.id}`,
+            reason: 'SHARE_ALREADY_COVERED_BY_ORGANIZER',
+          });
+
+          await client.query(
+            `INSERT INTO refunds (
+              tenant_id, venue_id, group_booking_id, payment_intent_id,
+              customer_id, amount_minor, currency, status, reason, provider_ref
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'RON', 'SUCCEEDED', 'SHARE_ALREADY_COVERED_BY_ORGANIZER', $7)`,
+            [
+              gb.tenant_id,
+              gb.venue_id,
+              gb.id,
+              pi.id,
+              (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+              pi.amount_minor,
+              refundRes.refundRef,
+            ],
+          );
+
+          await client.query(
+            `INSERT INTO audit_events (
+              tenant_id, venue_id, request_id, actor_id, actor_role,
+              action, target_type, target_id, metadata
+            ) VALUES ($1, $2, $3, $4, 'SYSTEM', 'GROUP_PAYMENT_REFUNDED_ALREADY_COVERED', 'GROUP_BOOKING', $5, $6)`,
+            [
+              gb.tenant_id,
+              gb.venue_id,
+              reqId,
+              gb.organizer_id,
+              gb.id,
+              JSON.stringify({
+                payment_intent_id: pi.id,
+                amount_minor: Number(pi.amount_minor),
+                reason: 'Booking already confirmed by organizer difference coverage',
+              }),
+            ],
+          );
+
+          await client.query('COMMIT');
+          return {
+            confirmed: true,
+            group_booking_id: gb.id,
+            booking_id: gb.booking_id,
+            public_code: bRes.rows[0]?.public_code,
+            refunded: true,
+            reason: 'SHARE_ALREADY_COVERED_BY_ORGANIZER',
+            all_due_paid: true,
+            total_paid_minor: Number(gb.due_now_minor),
+            due_now_minor: Number(gb.due_now_minor),
+          };
+        }
+
         await client.query('COMMIT');
         return {
           confirmed: true,
@@ -1255,5 +1321,159 @@ export class GroupService implements OnModuleInit {
     } finally {
       client.release();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-303: Difference Breakdown & Pay-Difference Safety
+  // ---------------------------------------------------------------------------
+
+  async getDifferenceSummary(
+    callerUserId: string,
+    groupBookingId: string,
+  ): Promise<DifferenceSummaryResult> {
+    const gb = await this.getGroupBooking(callerUserId, groupBookingId, false);
+    const pool = getPool();
+
+    const sumRes = await pool.query<{ total_paid: string }>(
+      'SELECT COALESCE(SUM(share_paid_minor), 0) as total_paid FROM group_participants WHERE group_booking_id = $1',
+      [gb.id],
+    );
+    const totalPaid = Number(sumRes.rows[0]?.total_paid || 0);
+    const dueNow = gb.due_now_minor;
+    const outstandingDiff = Math.max(0, dueNow - totalPaid);
+
+    const nowMs = Date.now();
+    const expiryMs = new Date(gb.expires_at).getTime();
+    const secondsRemaining = Math.max(0, Math.round((expiryMs - nowMs) / 1000));
+
+    const unpaidParticipants: DifferenceSummaryParticipant[] = [];
+    const paidParticipants: DifferenceSummaryParticipant[] = [];
+
+    for (const p of gb.participants) {
+      const unpaid = Math.max(0, p.share_due_now_minor - p.share_paid_minor);
+      const item: DifferenceSummaryParticipant = {
+        participant_id: p.id,
+        invited_email: p.invited_email,
+        is_organizer: p.is_organizer,
+        assigned_resource_id: p.assigned_resource_id,
+        share_due_now_minor: p.share_due_now_minor,
+        share_paid_minor: p.share_paid_minor,
+        unpaid_share_minor: unpaid,
+        status: p.status,
+      };
+
+      if (unpaid > 0) {
+        unpaidParticipants.push(item);
+      } else {
+        paidParticipants.push(item);
+      }
+    }
+
+    return {
+      group_booking_id: gb.id,
+      total_minor: gb.total_minor,
+      due_now_minor: dueNow,
+      total_paid_minor: totalPaid,
+      outstanding_difference_minor: outstandingDiff,
+      is_fully_paid: outstandingDiff === 0,
+      hold_expires_at: gb.hold_id ? gb.expires_at : null,
+      seconds_remaining: secondsRemaining,
+      unpaid_participants: unpaidParticipants,
+      paid_participants: paidParticipants,
+    };
+  }
+
+  async payDifference(
+    callerUserId: string,
+    groupBookingId: string,
+    requestId?: string,
+  ): Promise<PayDifferenceResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const gb = await this.getGroupBooking(callerUserId, groupBookingId, false);
+
+    if (gb.organizer_id !== callerUserId) {
+      throw forbidden('NOT_GROUP_ORGANIZER', 'Only the group organizer can pay the remaining difference');
+    }
+
+    if (gb.status === 'CONFIRMED') {
+      throw conflict('GROUP_ALREADY_CONFIRMED', 'Group booking has already been confirmed');
+    }
+
+    if (gb.status !== 'PENDING_PAYMENTS') {
+      throw conflict('INVALID_GROUP_STATUS', `Group booking is in status '${gb.status}', must be PENDING_PAYMENTS`);
+    }
+
+    if (new Date(gb.expires_at).getTime() <= Date.now()) {
+      throw conflict('GROUP_BOOKING_EXPIRED', 'Group booking checkout hold has expired');
+    }
+
+    const sumRes = await pool.query<{ total_paid: string }>(
+      'SELECT COALESCE(SUM(share_paid_minor), 0) as total_paid FROM group_participants WHERE group_booking_id = $1',
+      [gb.id],
+    );
+    const totalPaid = Number(sumRes.rows[0]?.total_paid || 0);
+    const outstandingDiff = Math.max(0, gb.due_now_minor - totalPaid);
+
+    if (outstandingDiff <= 0) {
+      throw badRequest('NO_OUTSTANDING_DIFFERENCE', 'All due-now obligations have already been paid');
+    }
+
+    const orgParticipant = gb.participants.find((p) => p.is_organizer);
+    if (!orgParticipant) {
+      throw badRequest('ORGANIZER_PARTICIPANT_NOT_FOUND', 'Organizer participant record not found');
+    }
+
+    const idempotencyKey = `gb-paydiff-${gb.id}-${outstandingDiff}`;
+
+    const intent = await this.paymentsService.createIntent(
+      gb.tenant_id,
+      gb.venue_id,
+      {
+        amountMinor: outstandingDiff,
+        currency: 'RON',
+        reference: `GroupBooking:${gb.id}:PayDifference:${callerUserId}`,
+        idempotencyKey,
+        metadata: {
+          group_booking_id: gb.id,
+          group_participant_id: orgParticipant.id,
+          type: 'PAY_DIFFERENCE',
+          covered_by: callerUserId,
+          amount_minor: outstandingDiff,
+        },
+      },
+      'sandbox',
+      gb.id,
+      orgParticipant.id,
+    );
+
+    await pool.query(
+      `INSERT INTO audit_events (
+        tenant_id, venue_id, request_id, actor_id, actor_role,
+        action, target_type, target_id, metadata
+      ) VALUES ($1, $2, $3, $4, 'CUSTOMER', 'GROUP_PAY_DIFFERENCE_INITIATED', 'GROUP_BOOKING', $5, $6)`,
+      [
+        gb.tenant_id,
+        gb.venue_id,
+        reqId,
+        callerUserId,
+        gb.id,
+        JSON.stringify({
+          difference_amount_minor: outstandingDiff,
+          payment_intent_id: intent.intentId,
+          provider_ref: intent.providerRef,
+        }),
+      ],
+    );
+
+    return {
+      intent_id: intent.intentId,
+      provider_ref: intent.providerRef,
+      client_secret: intent.clientSecret,
+      amount_minor: outstandingDiff,
+      currency: 'RON',
+      status: intent.status,
+      group_booking_id: gb.id,
+    };
   }
 }

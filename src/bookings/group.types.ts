@@ -107,3 +107,37 @@ export interface ExpireGroupBookingResult {
   refunded_count: number;
   refunded_total_minor: number;
 }
+
+export interface DifferenceSummaryParticipant {
+  participant_id: string;
+  invited_email: string | null;
+  is_organizer: boolean;
+  assigned_resource_id: string | null;
+  share_due_now_minor: number;
+  share_paid_minor: number;
+  unpaid_share_minor: number;
+  status: ParticipantStatus;
+}
+
+export interface DifferenceSummaryResult {
+  group_booking_id: string;
+  total_minor: number;
+  due_now_minor: number;
+  total_paid_minor: number;
+  outstanding_difference_minor: number;
+  is_fully_paid: boolean;
+  hold_expires_at: string | null;
+  seconds_remaining: number;
+  unpaid_participants: DifferenceSummaryParticipant[];
+  paid_participants: DifferenceSummaryParticipant[];
+}
+
+export interface PayDifferenceResult {
+  intent_id: string;
+  provider_ref: string;
+  client_secret?: string;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  group_booking_id: string;
+}

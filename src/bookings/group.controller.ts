@@ -213,4 +213,36 @@ export class GroupController {
     const result = await this.groupService.handlePaymentCaptured(body.provider_ref, requestId);
     return { result };
   }
+
+  // ---------------------------------------------------------------------------
+  // ENG-303: Difference Summary & Pay-Difference Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/difference-summary')
+  @UseGuards(SessionGuard)
+  async getDifferenceSummary(
+    @Param('id') id: string,
+    @Req() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    const principal = req.auth as SessionPrincipal;
+    const summary = await this.groupService.getDifferenceSummary(principal.userId, id);
+    return { difference_summary: summary };
+  }
+
+  @Post(':id/pay-difference')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SessionGuard)
+  async payDifference(
+    @Param('id') id: string,
+    @Req() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    const principal = req.auth as SessionPrincipal;
+    const requestId = (req.headers['x-request-id'] as string) || '';
+    const paymentIntent = await this.groupService.payDifference(principal.userId, id, requestId);
+    return { payment_intent: paymentIntent };
+  }
 }
