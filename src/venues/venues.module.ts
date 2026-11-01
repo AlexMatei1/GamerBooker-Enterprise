@@ -6,6 +6,8 @@ import { WizardController } from './wizard.controller';
 import { WizardService } from './wizard.service';
 import { ResourceManagerController } from './resource-manager.controller';
 import { ResourceManagerService } from './resource-manager.service';
+import { OperationsController } from './operations.controller';
+import { OperationsService } from './operations.service';
 
 @Module({
   imports: [AuthModule],
@@ -13,16 +15,19 @@ import { ResourceManagerService } from './resource-manager.service';
     VenuesController,
     WizardController,
     ResourceManagerController,
+    OperationsController,
   ],
   providers: [
     VenuesService,
     WizardService,
     ResourceManagerService,
+    OperationsService,
   ],
   exports: [
     VenuesService,
     WizardService,
     ResourceManagerService,
+    OperationsService,
   ],
 })
 export class VenuesModule {}
