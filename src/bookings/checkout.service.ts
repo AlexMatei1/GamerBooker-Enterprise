@@ -1,8 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, OnModuleInit } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
 import { BookingsService } from './bookings.service';
+import { PaymentsService, type PaymentIntentRow } from '../payments/payments.service';
 import type { BookingRow } from './bookings.types';
 import type {
   BalanceSummary,
@@ -13,6 +14,13 @@ import type {
   ScanCheckinInput,
   SoloCheckoutInput,
   SoloCheckoutResult,
+  PayBalanceOnlineInput,
+  PayBalanceOnlineResult,
+  ReceiptFilterQuery,
+  ReceiptLedgerItem,
+  ReceiptLedgerResult,
+  VoidReceiptInput,
+  VoidReceiptResult,
 } from './checkout.types';
 
 export const DEFAULT_QR_SECRET = 'gamerbooker-qr-token-secret-0123456789abcdef';
@@ -27,11 +35,29 @@ interface RawQrPayload {
 }
 
 @Injectable()
-export class CheckoutService {
+export class CheckoutService implements OnModuleInit {
   private readonly qrSecret: string;
 
-  constructor(private readonly bookingsService: BookingsService) {
+  constructor(
+    private readonly bookingsService: BookingsService,
+    private readonly paymentsService?: PaymentsService,
+  ) {
     this.qrSecret = process.env.QR_SECRET || DEFAULT_QR_SECRET;
+  }
+
+  onModuleInit() {
+    this.paymentsService?.onPaymentCaptured(async (intent) => {
+      if (intent.metadata && (intent.metadata as any).type === 'ONLINE_BALANCE_PAYMENT') {
+        await this.handleBalancePaymentCaptured(intent.provider_ref);
+      }
+    });
+  }
+
+  private getPayments(): PaymentsService {
+    if (!this.paymentsService) {
+      throw new Error('PAYMENTS_SERVICE_NOT_INITIALIZED');
+    }
+    return this.paymentsService;
   }
 
   private computeQrSignature(
@@ -526,6 +552,489 @@ export class CheckoutService {
         reference: receipt.reference,
         notes: receipt.notes,
         created_at: new Date(receipt.created_at).toISOString(),
+      };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-304: Online Remaining Balance Payment & Handling
+  // ---------------------------------------------------------------------------
+
+  async createOnlineBalanceIntent(
+    customerId: string,
+    bookingId: string,
+    input?: PayBalanceOnlineInput,
+    requestId?: string,
+  ): Promise<PayBalanceOnlineResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const booking = await this.bookingsService.getBookingById(bookingId, customerId);
+
+    const balanceMinor = Number(booking.balance_minor);
+    if (balanceMinor <= 0) {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'NO_OUTSTANDING_BALANCE',
+        'This booking has no outstanding balance to settle',
+      );
+    }
+
+    const policy = booking.policy_snapshot as any;
+    const settings = policy?.settings || policy;
+    const allowedMethods = settings?.deposit_mode_settlement || 'ONLINE_OR_RECEPTION';
+    if (allowedMethods === 'RECEPTION_ONLY') {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'ONLINE_SETTLEMENT_NOT_ALLOWED',
+        'Venue policy requires remaining balance to be settled at reception only',
+      );
+    }
+
+    const amountMinor =
+      input?.amount_minor && input.amount_minor > 0
+        ? Math.min(input.amount_minor, balanceMinor)
+        : balanceMinor;
+
+    const idempotencyKey = `b-bal-${booking.id}-${amountMinor}-${Date.now()}`;
+
+    const intent = await this.getPayments().createIntent(
+      booking.tenant_id,
+      booking.venue_id,
+      {
+        amountMinor,
+        currency: 'RON',
+        reference: `Booking:${booking.id}:Balance`,
+        idempotencyKey,
+        metadata: {
+          type: 'ONLINE_BALANCE_PAYMENT',
+          booking_id: booking.id,
+          customer_id: customerId,
+        },
+      },
+      'sandbox',
+      null,
+      null,
+      booking.id,
+    );
+
+    await pool.query(
+      `INSERT INTO audit_events (
+        tenant_id, venue_id, request_id, actor_id, actor_role,
+        action, target_type, target_id, metadata
+      ) VALUES ($1, $2, $3, $4, 'CUSTOMER', 'ONLINE_BALANCE_INTENT_CREATED', 'BOOKING', $5, $6)`,
+      [
+        booking.tenant_id,
+        booking.venue_id,
+        reqId,
+        customerId,
+        booking.id,
+        JSON.stringify({
+          amount_minor: amountMinor,
+          payment_intent_id: intent.intentId,
+          provider_ref: intent.providerRef,
+        }),
+      ],
+    );
+
+    return {
+      intent_id: intent.intentId,
+      provider_ref: intent.providerRef,
+      client_secret: intent.clientSecret,
+      amount_minor: amountMinor,
+      currency: 'RON',
+      booking_id: booking.id,
+      status: intent.status,
+    };
+  }
+
+  async handleBalancePaymentCaptured(
+    providerRef: string,
+    requestId?: string,
+  ): Promise<{ applied_minor: number; refunded_minor: number; new_balance_minor: number }> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const piRes = await client.query<PaymentIntentRow>(
+        'SELECT * FROM payment_intents WHERE provider_ref = $1 FOR UPDATE',
+        [providerRef],
+      );
+      if (piRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'PAYMENT_INTENT_NOT_FOUND', 'Payment intent not found');
+      }
+      const pi = piRes.rows[0];
+
+      if (!pi.booking_id) {
+        await client.query('COMMIT');
+        return { applied_minor: 0, refunded_minor: 0, new_balance_minor: 0 };
+      }
+
+      const bRes = await client.query<BookingRow>(
+        'SELECT * FROM bookings WHERE id = $1 FOR UPDATE',
+        [pi.booking_id],
+      );
+      if (bRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'BOOKING_NOT_FOUND', 'Booking not found');
+      }
+      const booking = bRes.rows[0];
+
+      const currentBalance = Number(booking.balance_minor);
+      const paidMinor = Number(booking.paid_minor);
+      const intentAmount = Number(pi.amount_minor);
+
+      if (pi.status === 'CAPTURED') {
+        await client.query('COMMIT');
+        return { applied_minor: 0, refunded_minor: 0, new_balance_minor: currentBalance };
+      }
+
+      await client.query(
+        "UPDATE payment_intents SET status = 'CAPTURED', updated_at = now() WHERE id = $1",
+        [pi.id],
+      );
+
+      // Overpayment detection: if current balance <= 0 (e.g. reception already paid it)
+      if (currentBalance <= 0) {
+        const refundRes = await this.getPayments().refund({
+          providerRef: pi.provider_ref,
+          amountMinor: intentAmount,
+          idempotencyKey: `refund-bal-overpaid-${pi.id}`,
+          reason: 'BALANCE_ALREADY_SETTLED_OVERPAYMENT',
+        });
+
+        await client.query(
+          `INSERT INTO refunds (
+            tenant_id, venue_id, booking_id, payment_intent_id,
+            customer_id, amount_minor, currency, status, reason, provider_ref
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'RON', 'SUCCEEDED', 'BALANCE_ALREADY_SETTLED_OVERPAYMENT', $7)`,
+          [
+            booking.tenant_id,
+            booking.venue_id,
+            booking.id,
+            pi.id,
+            booking.customer_id,
+            intentAmount,
+            refundRes.refundRef,
+          ],
+        );
+
+        await client.query(
+          `INSERT INTO audit_events (
+            tenant_id, venue_id, request_id, actor_id, actor_role,
+            action, target_type, target_id, metadata
+          ) VALUES ($1, $2, $3, $4, 'SYSTEM', 'ONLINE_BALANCE_REFUNDED_ALREADY_SETTLED', 'BOOKING', $5, $6)`,
+          [
+            booking.tenant_id,
+            booking.venue_id,
+            reqId,
+            booking.customer_id,
+            booking.id,
+            JSON.stringify({
+              payment_intent_id: pi.id,
+              amount_minor: intentAmount,
+              reason: 'Balance was already settled prior to capture',
+            }),
+          ],
+        );
+
+        await client.query('COMMIT');
+        return { applied_minor: 0, refunded_minor: intentAmount, new_balance_minor: 0 };
+      }
+
+      const applied = Math.min(intentAmount, currentBalance);
+      const excess = intentAmount - applied;
+      const newPaid = paidMinor + applied;
+      const newBalance = currentBalance - applied;
+
+      await client.query(
+        `UPDATE bookings
+         SET paid_minor = $1, balance_minor = $2, version = version + 1, updated_at = now()
+         WHERE id = $3`,
+        [newPaid, newBalance, booking.id],
+      );
+
+      if (excess > 0) {
+        const excessRefund = await this.getPayments().refund({
+          providerRef: pi.provider_ref,
+          amountMinor: excess,
+          idempotencyKey: `refund-excess-${pi.id}`,
+          reason: 'PARTIAL_EXCESS_OVERPAYMENT',
+        });
+
+        await client.query(
+          `INSERT INTO refunds (
+            tenant_id, venue_id, booking_id, payment_intent_id,
+            customer_id, amount_minor, currency, status, reason, provider_ref
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'RON', 'SUCCEEDED', 'PARTIAL_EXCESS_OVERPAYMENT', $7)`,
+          [
+            booking.tenant_id,
+            booking.venue_id,
+            booking.id,
+            pi.id,
+            booking.customer_id,
+            excess,
+            excessRefund.refundRef,
+          ],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO audit_events (
+          tenant_id, venue_id, request_id, actor_id, actor_role,
+          action, target_type, target_id, metadata
+        ) VALUES ($1, $2, $3, $4, 'CUSTOMER', 'ONLINE_BALANCE_PAID', 'BOOKING', $5, $6)`,
+        [
+          booking.tenant_id,
+          booking.venue_id,
+          reqId,
+          booking.customer_id,
+          booking.id,
+          JSON.stringify({
+            applied_minor: applied,
+            excess_refunded_minor: excess,
+            new_balance_minor: newBalance,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+          tenant_id, aggregate_type, aggregate_id, event_type, payload
+        ) VALUES ($1, 'BOOKING', $2, 'BalancePaid', $3)`,
+        [
+          booking.tenant_id,
+          booking.id,
+          JSON.stringify({
+            booking_id: booking.id,
+            amount_minor: applied,
+            remaining_balance: newBalance,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+      return { applied_minor: applied, refunded_minor: excess, new_balance_minor: newBalance };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-304: Reception Offline Receipt Ledger & Voiding
+  // ---------------------------------------------------------------------------
+
+  async listReceiptLedger(
+    venueId: string,
+    filter: ReceiptFilterQuery,
+  ): Promise<ReceiptLedgerResult> {
+    const pool = getPool();
+    const conditions: string[] = ['r.venue_id = $1'];
+    const params: any[] = [venueId];
+    let pIdx = 2;
+
+    if (filter.from) {
+      conditions.push(`r.created_at >= $${pIdx++}`);
+      params.push(new Date(filter.from));
+    }
+    if (filter.to) {
+      conditions.push(`r.created_at <= $${pIdx++}`);
+      params.push(new Date(filter.to));
+    }
+    if (filter.staff_id) {
+      conditions.push(`r.staff_id = $${pIdx++}`);
+      params.push(filter.staff_id);
+    }
+    if (filter.payment_method) {
+      conditions.push(`r.payment_method = $${pIdx++}`);
+      params.push(filter.payment_method);
+    }
+    if (!filter.include_voided) {
+      conditions.push('r.voided_at IS NULL');
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const limit = Math.min(Math.max(filter.limit || 50, 1), 100);
+    const offset = Math.max((filter.page || 1) - 1, 0) * limit;
+
+    const itemsQuery = `
+      SELECT r.*, b.public_code as booking_public_code, u.email as staff_name
+      FROM offline_receipts r
+      JOIN bookings b ON b.id = r.booking_id
+      LEFT JOIN users u ON u.id = r.staff_id
+      WHERE ${whereClause}
+      ORDER BY r.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const itemsRes = await pool.query<any>(itemsQuery, params);
+
+    const summaryQuery = `
+      SELECT
+        COUNT(*) as total_count,
+        COALESCE(SUM(CASE WHEN voided_at IS NULL THEN amount_minor ELSE 0 END), 0) as total_collected_minor,
+        COALESCE(SUM(CASE WHEN voided_at IS NULL AND payment_method = 'CASH' THEN amount_minor ELSE 0 END), 0) as cash_collected_minor,
+        COALESCE(SUM(CASE WHEN voided_at IS NULL AND payment_method IN ('POS_TERMINAL', 'RECEPTION_CARD') THEN amount_minor ELSE 0 END), 0) as card_collected_minor,
+        COUNT(CASE WHEN voided_at IS NOT NULL THEN 1 END) as voided_count
+      FROM offline_receipts r
+      WHERE ${whereClause}
+    `;
+
+    const sumRes = await pool.query<any>(summaryQuery, params);
+    const sumRow = sumRes.rows[0];
+
+    return {
+      receipts: itemsRes.rows.map((r) => ({
+        id: r.id,
+        venue_id: r.venue_id,
+        booking_id: r.booking_id,
+        booking_public_code: r.booking_public_code,
+        staff_id: r.staff_id,
+        staff_name: r.staff_name || null,
+        amount_minor: Number(r.amount_minor),
+        payment_method: r.payment_method,
+        reference: r.reference,
+        notes: r.notes,
+        voided_at: r.voided_at ? new Date(r.voided_at).toISOString() : null,
+        voided_by: r.voided_by || null,
+        void_reason: r.void_reason || null,
+        created_at: new Date(r.created_at).toISOString(),
+      })),
+      total_count: Number(sumRow?.total_count || 0),
+      summary: {
+        total_collected_minor: Number(sumRow?.total_collected_minor || 0),
+        cash_collected_minor: Number(sumRow?.cash_collected_minor || 0),
+        card_collected_minor: Number(sumRow?.card_collected_minor || 0),
+        voided_count: Number(sumRow?.voided_count || 0),
+      },
+    };
+  }
+
+  async voidReceipt(
+    venueId: string,
+    receiptId: string,
+    staffId: string,
+    input: VoidReceiptInput,
+    requestId?: string,
+  ): Promise<VoidReceiptResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    if (!input?.reason || input.reason.trim().length === 0) {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'MISSING_VOID_REASON',
+        'Must provide a valid reason for voiding this receipt',
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const rRes = await client.query<any>(
+        'SELECT * FROM offline_receipts WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [receiptId, venueId],
+      );
+      if (rRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'RECEIPT_NOT_FOUND', 'Offline receipt not found');
+      }
+      const receipt = rRes.rows[0];
+
+      if (receipt.voided_at !== null) {
+        throw new AuthHttpError(
+          HttpStatus.CONFLICT,
+          'RECEIPT_ALREADY_VOIDED',
+          'This receipt has already been voided',
+        );
+      }
+
+      const bRes = await client.query<BookingRow>(
+        'SELECT * FROM bookings WHERE id = $1 FOR UPDATE',
+        [receipt.booking_id],
+      );
+      if (bRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'BOOKING_NOT_FOUND', 'Associated booking not found');
+      }
+      const booking = bRes.rows[0];
+
+      const receiptAmount = Number(receipt.amount_minor);
+      const newPaid = Number(booking.paid_minor) - receiptAmount;
+      const newBalance = Number(booking.balance_minor) + receiptAmount;
+
+      await client.query(
+        `UPDATE bookings
+         SET paid_minor = $1, balance_minor = $2, version = version + 1, updated_at = now()
+         WHERE id = $3`,
+        [newPaid, newBalance, booking.id],
+      );
+
+      const now = new Date();
+      await client.query(
+        `UPDATE offline_receipts
+         SET voided_at = $1, voided_by = $2, void_reason = $3
+         WHERE id = $4`,
+        [now, staffId, input.reason.trim(), receipt.id],
+      );
+
+      await client.query(
+        `INSERT INTO audit_events (
+          tenant_id, venue_id, request_id, actor_id, actor_role,
+          action, target_type, target_id, metadata
+        ) VALUES ($1, $2, $3, $4, 'STAFF', 'OFFLINE_RECEIPT_VOIDED', 'OFFLINE_RECEIPT', $5, $6)`,
+        [
+          receipt.tenant_id,
+          venueId,
+          reqId,
+          staffId,
+          receipt.id,
+          JSON.stringify({
+            receipt_id: receipt.id,
+            booking_id: booking.id,
+            reverted_amount_minor: receiptAmount,
+            reason: input.reason.trim(),
+            new_balance_minor: newBalance,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+          tenant_id, aggregate_type, aggregate_id, event_type, payload
+        ) VALUES ($1, 'OFFLINE_RECEIPT', $2, 'OfflineReceiptVoided', $3)`,
+        [
+          receipt.tenant_id,
+          receipt.id,
+          JSON.stringify({
+            receipt_id: receipt.id,
+            booking_id: booking.id,
+            reverted_amount_minor: receiptAmount,
+            new_balance_minor: newBalance,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        receipt_id: receipt.id,
+        voided: true,
+        booking_id: booking.id,
+        reverted_amount_minor: receiptAmount,
+        new_balance_minor: newBalance,
+        new_paid_minor: newPaid,
+        voided_at: now.toISOString(),
+        voided_by: staffId,
+        void_reason: input.reason.trim(),
       };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);

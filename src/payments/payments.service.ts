@@ -74,6 +74,7 @@ export class PaymentsService {
     providerName: string = 'sandbox',
     groupBookingId?: string | null,
     groupParticipantId?: string | null,
+    bookingId?: string | null,
   ): Promise<IntentResult & { intentId: string }> {
     const provider = this.getProvider(providerName);
     const pool = getPool();
@@ -96,8 +97,8 @@ export class PaymentsService {
 
     const inserted = await pool.query<{ id: string }>(
       `INSERT INTO payment_intents
-        (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata, group_booking_id, group_participant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata, group_booking_id, group_participant_id, booking_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         tenantId,
@@ -111,6 +112,7 @@ export class PaymentsService {
         JSON.stringify(input.metadata ?? {}),
         groupBookingId || null,
         groupParticipantId || null,
+        bookingId || null,
       ],
     );
 

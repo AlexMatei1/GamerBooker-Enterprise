@@ -3,8 +3,11 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +20,9 @@ import type {
   PayBalanceInput,
   ScanCheckinInput,
   SoloCheckoutInput,
+  PayBalanceOnlineInput,
+  ReceiptFilterQuery,
+  VoidReceiptInput,
 } from './checkout.types';
 
 interface AuthedRequest extends Request {
@@ -115,5 +121,70 @@ export class CheckoutController {
       input,
       requestId,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-304: Online Remaining Payment & Reception Ledger / Voiding
+  // ---------------------------------------------------------------------------
+
+  @Post('bookings/:id/pay-balance-online')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SessionGuard)
+  async payBalanceOnline(
+    @Req() req: AuthedRequest,
+    @Param('id') bookingId: string,
+    @Body() input?: PayBalanceOnlineInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const customerId = req.auth?.userId;
+    if (!customerId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    return this.checkoutService.createOnlineBalanceIntent(
+      customerId,
+      bookingId,
+      input,
+      requestId,
+    );
+  }
+
+  @Post('payments/capture-balance')
+  @HttpCode(HttpStatus.OK)
+  async captureBalancePayment(
+    @Body() body: { provider_ref: string },
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    if (!body?.provider_ref) {
+      throw new Error('MISSING_PROVIDER_REF');
+    }
+    return this.checkoutService.handleBalancePaymentCaptured(body.provider_ref, requestId);
+  }
+
+  @Get('dashboard/venues/:venue_id/receipts')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async listReceipts(
+    @Param('venue_id') venueId: string,
+    @Query() query: ReceiptFilterQuery,
+  ) {
+    return this.checkoutService.listReceiptLedger(venueId, query);
+  }
+
+  @Post('dashboard/venues/:venue_id/receipts/:id/void')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER')
+  async voidReceipt(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') receiptId: string,
+    @Body() input: VoidReceiptInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    return this.checkoutService.voidReceipt(venueId, receiptId, staffId, input, requestId);
   }
 }
