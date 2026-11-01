@@ -20,6 +20,8 @@ import type {
   ValidateCartInput,
   CheckoutOrderInput,
   OrderFilterQuery,
+  RefuseAgeInput,
+  CancelUnavailableItemInput,
 } from './orders.types';
 
 interface AuthedRequest extends Request {
@@ -319,5 +321,75 @@ export class OrdersController {
     const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
 
     return this.ordersService.rejectOrder(venueId, orderId, staffId, staffRole, body, requestId);
+  }
+
+  // ===========================================================================
+  // ENG-404: Age Refusal & Line Item Refunds
+  // ===========================================================================
+
+  @Post('dashboard/venues/:venue_id/orders/:id/refuse-age')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async refuseAgeVerification(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Body() body?: RefuseAgeInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.refuseAgeVerification(
+      venueId,
+      orderId,
+      staffId,
+      staffRole,
+      body,
+      requestId,
+    );
+  }
+
+  @Post('dashboard/venues/:venue_id/orders/:id/items/:item_id/cancel-unavailable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async cancelUnavailableItem(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Param('id') orderId: string,
+    @Param('item_id') itemId: string,
+    @Body() body: CancelUnavailableItemInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'RECEPTION';
+
+    return this.ordersService.cancelUnavailableItem(
+      venueId,
+      orderId,
+      itemId,
+      staffId,
+      staffRole,
+      body,
+      requestId,
+    );
   }
 }

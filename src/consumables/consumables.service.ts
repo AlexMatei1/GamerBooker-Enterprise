@@ -15,6 +15,10 @@ import type {
   BulkImportResult,
   UploadImageInput,
   RestrictedProductType,
+  PerformStockReconciliationInput,
+  StockReconciliationAuditDetail,
+  StockReconciliationItemDetail,
+  StockReconciliationListResult,
 } from './consumables.types';
 
 @Injectable()
@@ -955,8 +959,352 @@ export class ConsumablesService {
   }
 
   // ---------------------------------------------------------------------------
+  // ENG-404: Physical Stock Reconciliation
+  // ---------------------------------------------------------------------------
+
+  async performStockReconciliation(
+    venueId: string,
+    staffId: string,
+    staffRole: string,
+    input: PerformStockReconciliationInput,
+    requestId?: string,
+  ): Promise<StockReconciliationAuditDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+
+    if (!input?.items || !Array.isArray(input.items) || input.items.length === 0) {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'MISSING_RECONCILIATION_ITEMS',
+        'At least one product count must be submitted for stock reconciliation.',
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const vRes = await client.query<{ tenant_id: string }>(
+        'SELECT tenant_id FROM venues WHERE id = $1',
+        [venueId],
+      );
+      if (vRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'VENUE_NOT_FOUND', 'Venue not found.');
+      }
+      const tenantId = vRes.rows[0].tenant_id;
+
+      // Create reconciliation audit record
+      const auditRes = await client.query<any>(
+        `INSERT INTO stock_reconciliation_audits (
+           tenant_id, venue_id, performed_by, notes, status
+         ) VALUES ($1, $2, $3, $4, 'IN_PROGRESS')
+         RETURNING *`,
+        [tenantId, venueId, staffId, input.notes?.trim() || null],
+      );
+      const audit = auditRes.rows[0];
+
+      let itemsCounted = 0;
+      let discrepancyItemsCount = 0;
+      let totalDiscrepancyUnits = 0;
+      let totalShrinkageValueMinor = 0n;
+
+      const itemDetails: StockReconciliationItemDetail[] = [];
+
+      for (const item of input.items) {
+        if (!item.product_id) continue;
+        const counted = Math.max(0, Math.floor(Number(item.counted_stock)));
+        if (isNaN(counted)) {
+          throw new AuthHttpError(
+            HttpStatus.BAD_REQUEST,
+            'INVALID_COUNTED_STOCK',
+            `Counted stock for product '${item.product_id}' must be a non-negative integer.`,
+          );
+        }
+
+        const pRes = await client.query<any>(
+          'SELECT * FROM products WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+          [item.product_id, venueId],
+        );
+        if (pRes.rows.length === 0) {
+          throw new AuthHttpError(
+            HttpStatus.NOT_FOUND,
+            'PRODUCT_NOT_FOUND',
+            `Product '${item.product_id}' not found in this venue.`,
+          );
+        }
+        const product = pRes.rows[0];
+        const expectedOnHand = Number(product.stock_on_hand || 0);
+        const priceMinor = BigInt(product.price_minor || 0);
+
+        const discrepancyQty = counted - expectedOnHand;
+        const discrepancyValueMinor = BigInt(Math.abs(discrepancyQty)) * priceMinor;
+
+        let adjustmentType: 'NONE' | 'SHRINKAGE' | 'SURPLUS' = 'NONE';
+        if (discrepancyQty < 0) {
+          adjustmentType = 'SHRINKAGE';
+        } else if (discrepancyQty > 0) {
+          adjustmentType = 'SURPLUS';
+        }
+
+        itemsCounted++;
+        if (discrepancyQty !== 0) {
+          discrepancyItemsCount++;
+          totalDiscrepancyUnits += discrepancyQty;
+          if (discrepancyQty < 0) {
+            totalShrinkageValueMinor += discrepancyValueMinor;
+          }
+
+          // Update product stock_on_hand to the verified counted stock
+          await client.query(
+            'UPDATE products SET stock_on_hand = $1, updated_at = now() WHERE id = $2',
+            [counted, product.id],
+          );
+
+          // Record stock movement ledger entry
+          const movementType = discrepancyQty < 0 ? 'DAMAGE_WASTE' : 'ADJUSTMENT';
+          await client.query(
+            `INSERT INTO stock_movements (
+               tenant_id, venue_id, product_id, movement_type, quantity_delta,
+               balance_after, actor_id, actor_role, reference, notes
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
+              tenantId,
+              venueId,
+              product.id,
+              movementType,
+              discrepancyQty,
+              counted,
+              staffId,
+              staffRole,
+              audit.id,
+              `Physical stock reconciliation: ${adjustmentType} of ${Math.abs(discrepancyQty)} units`,
+            ],
+          );
+        }
+
+        // Record stock reconciliation item
+        const itemRes = await client.query<any>(
+          `INSERT INTO stock_reconciliation_items (
+             audit_id, product_id, expected_stock, counted_stock,
+             discrepancy_quantity, discrepancy_value_minor, adjustment_type, notes
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [
+            audit.id,
+            product.id,
+            expectedOnHand,
+            counted,
+            discrepancyQty,
+            discrepancyValueMinor.toString(),
+            adjustmentType,
+            item.notes || null,
+          ],
+        );
+
+        itemDetails.push({
+          id: itemRes.rows[0].id,
+          product_id: product.id,
+          product_title: product.title,
+          expected_stock: expectedOnHand,
+          counted_stock: counted,
+          discrepancy_quantity: discrepancyQty,
+          discrepancy_value_minor: Number(discrepancyValueMinor),
+          adjustment_type: adjustmentType,
+          notes: item.notes || null,
+          created_at: new Date(itemRes.rows[0].created_at).toISOString(),
+        });
+      }
+
+      // Update audit header with aggregated metrics
+      await client.query(
+        `UPDATE stock_reconciliation_audits
+            SET items_counted = $1,
+                discrepancy_items_count = $2,
+                total_discrepancy_units = $3,
+                total_shrinkage_value_minor = $4,
+                status = 'COMPLETED',
+                completed_at = now()
+          WHERE id = $5`,
+        [
+          itemsCounted,
+          discrepancyItemsCount,
+          totalDiscrepancyUnits,
+          totalShrinkageValueMinor.toString(),
+          audit.id,
+        ],
+      );
+
+      // Audit event
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'STOCK_RECONCILIATION_COMPLETED', 'STOCK_RECONCILIATION', $6, $7)`,
+        [
+          tenantId,
+          venueId,
+          reqId,
+          staffId,
+          staffRole,
+          audit.id,
+          JSON.stringify({
+            items_counted: itemsCounted,
+            discrepancy_items_count: discrepancyItemsCount,
+            total_discrepancy_units: totalDiscrepancyUnits,
+            total_shrinkage_value_minor: totalShrinkageValueMinor.toString(),
+          }),
+        ],
+      );
+
+      // Outbox event
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'STOCK_RECONCILIATION', $2, 'StockReconciliationCompleted', $3)`,
+        [
+          tenantId,
+          audit.id,
+          JSON.stringify({
+            audit_id: audit.id,
+            venue_id: venueId,
+            items_counted: itemsCounted,
+            discrepancy_items_count: discrepancyItemsCount,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        id: audit.id,
+        tenant_id: tenantId,
+        venue_id: venueId,
+        performed_by: staffId,
+        items_counted: itemsCounted,
+        discrepancy_items_count: discrepancyItemsCount,
+        total_discrepancy_units: totalDiscrepancyUnits,
+        total_shrinkage_value_minor: Number(totalShrinkageValueMinor),
+        notes: audit.notes,
+        status: 'COMPLETED',
+        items: itemDetails,
+        created_at: new Date(audit.created_at).toISOString(),
+        completed_at: new Date().toISOString(),
+      };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listStockReconciliations(
+    venueId: string,
+    filter?: { page?: number; limit?: number },
+  ): Promise<StockReconciliationListResult> {
+    const pool = getPool();
+    const limit = Math.min(Math.max(filter?.limit || 20, 1), 100);
+    const offset = Math.max((filter?.page || 1) - 1, 0) * limit;
+
+    const countRes = await pool.query<{ count: string }>(
+      'SELECT count(*) as count FROM stock_reconciliation_audits WHERE venue_id = $1',
+      [venueId],
+    );
+    const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
+
+    const res = await pool.query<any>(
+      `SELECT sra.*, u.email as performed_by_name
+         FROM stock_reconciliation_audits sra
+         LEFT JOIN users u ON u.id = sra.performed_by
+        WHERE sra.venue_id = $1
+        ORDER BY sra.created_at DESC
+        LIMIT $2 OFFSET $3`,
+      [venueId, limit, offset],
+    );
+
+    const audits: StockReconciliationAuditDetail[] = [];
+    for (const row of res.rows) {
+      const itemsRes = await pool.query<any>(
+        `SELECT sri.*, p.title as product_title
+           FROM stock_reconciliation_items sri
+           LEFT JOIN products p ON p.id = sri.product_id
+          WHERE sri.audit_id = $1
+          ORDER BY sri.created_at ASC`,
+        [row.id],
+      );
+      audits.push(this.mapReconciliationAudit(row, itemsRes.rows));
+    }
+
+    return { audits, total_count: totalCount };
+  }
+
+  async getStockReconciliationById(
+    venueId: string,
+    auditId: string,
+  ): Promise<StockReconciliationAuditDetail> {
+    const pool = getPool();
+    const res = await pool.query<any>(
+      `SELECT sra.*, u.email as performed_by_name
+         FROM stock_reconciliation_audits sra
+         LEFT JOIN users u ON u.id = sra.performed_by
+        WHERE sra.id = $1 AND sra.venue_id = $2`,
+      [auditId, venueId],
+    );
+
+    if (res.rows.length === 0) {
+      throw new AuthHttpError(
+        HttpStatus.NOT_FOUND,
+        'RECONCILIATION_NOT_FOUND',
+        'Stock reconciliation audit not found.',
+      );
+    }
+    const audit = res.rows[0];
+
+    const itemsRes = await pool.query<any>(
+      `SELECT sri.*, p.title as product_title
+         FROM stock_reconciliation_items sri
+         LEFT JOIN products p ON p.id = sri.product_id
+        WHERE sri.audit_id = $1
+        ORDER BY sri.created_at ASC`,
+      [auditId],
+    );
+
+    return this.mapReconciliationAudit(audit, itemsRes.rows);
+  }
+
+  // ---------------------------------------------------------------------------
   // Row Mappers
   // ---------------------------------------------------------------------------
+
+  private mapReconciliationAudit(row: any, items: any[]): StockReconciliationAuditDetail {
+    return {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      venue_id: row.venue_id,
+      performed_by: row.performed_by,
+      performed_by_name: row.performed_by_name || null,
+      items_counted: Number(row.items_counted || 0),
+      discrepancy_items_count: Number(row.discrepancy_items_count || 0),
+      total_discrepancy_units: Number(row.total_discrepancy_units || 0),
+      total_shrinkage_value_minor: Number(row.total_shrinkage_value_minor || 0),
+      notes: row.notes || null,
+      status: row.status,
+      items: items.map((i) => ({
+        id: i.id,
+        product_id: i.product_id,
+        product_title: i.product_title || null,
+        expected_stock: Number(i.expected_stock || 0),
+        counted_stock: Number(i.counted_stock || 0),
+        discrepancy_quantity: Number(i.discrepancy_quantity || 0),
+        discrepancy_value_minor: Number(i.discrepancy_value_minor || 0),
+        adjustment_type: i.adjustment_type,
+        notes: i.notes || null,
+        created_at: new Date(i.created_at).toISOString(),
+      })),
+      created_at: new Date(row.created_at).toISOString(),
+      completed_at: new Date(row.completed_at || row.created_at).toISOString(),
+    };
+  }
 
   private mapCategory(row: any): MenuCategory {
     return {

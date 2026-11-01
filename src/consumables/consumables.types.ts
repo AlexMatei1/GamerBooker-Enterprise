@@ -158,3 +158,50 @@ export interface UploadImageInput {
   content_type?: string;
   image_base64?: string;
 }
+
+export interface StockReconciliationCountItem {
+  product_id: string;
+  counted_stock: number;
+  notes?: string;
+}
+
+export interface PerformStockReconciliationInput {
+  items: StockReconciliationCountItem[];
+  notes?: string;
+}
+
+export interface StockReconciliationItemDetail {
+  id: string;
+  product_id: string;
+  product_title?: string;
+  expected_stock: number;
+  counted_stock: number;
+  discrepancy_quantity: number;
+  discrepancy_value_minor: number;
+  adjustment_type: 'NONE' | 'SHRINKAGE' | 'SURPLUS';
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface StockReconciliationAuditDetail {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  performed_by: string;
+  performed_by_name?: string;
+  items_counted: number;
+  discrepancy_items_count: number;
+  total_discrepancy_units: number;
+  total_shrinkage_value_minor: number;
+  notes?: string | null;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  items: StockReconciliationItemDetail[];
+  created_at: string;
+  completed_at: string;
+}
+
+export interface StockReconciliationListResult {
+  audits: StockReconciliationAuditDetail[];
+  total_count: number;
+}
+

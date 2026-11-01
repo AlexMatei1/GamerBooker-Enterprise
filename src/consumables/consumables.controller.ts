@@ -26,6 +26,7 @@ import type {
   AdjustStockInput,
   BulkImportProductsInput,
   UploadImageInput,
+  PerformStockReconciliationInput,
 } from './consumables.types';
 
 interface AuthedRequest extends Request {
@@ -306,5 +307,63 @@ export class ConsumablesController {
       throw new Error('AUTH_REQUIRED');
     }
     return this.consumablesService.registerImage(venueId, input, staffId);
+  }
+
+  // ===========================================================================
+  // ENG-404: Physical Stock Reconciliation
+  // ===========================================================================
+
+  @Post('dashboard/venues/:venue_id/menu/stock-reconciliation')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER')
+  async performStockReconciliation(
+    @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
+    @Body() input: PerformStockReconciliationInput,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const staffId = req.auth?.userId;
+    if (!staffId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    const pool = (await import('../db/pool')).getPool();
+    const roleRes = await pool.query<{ role: string }>(
+      'SELECT role FROM venue_memberships WHERE venue_id = $1 AND user_id = $2',
+      [venueId, staffId],
+    );
+    const staffRole = roleRes.rows[0]?.role || 'VENUE_MANAGER';
+
+    return this.consumablesService.performStockReconciliation(
+      venueId,
+      staffId,
+      staffRole,
+      input,
+      requestId,
+    );
+  }
+
+  @Get('dashboard/venues/:venue_id/menu/stock-reconciliation')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async listStockReconciliations(
+    @Param('venue_id') venueId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.consumablesService.listStockReconciliations(venueId, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @Get('dashboard/venues/:venue_id/menu/stock-reconciliation/:id')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async getStockReconciliationById(
+    @Param('venue_id') venueId: string,
+    @Param('id') auditId: string,
+  ) {
+    return this.consumablesService.getStockReconciliationById(venueId, auditId);
   }
 }

@@ -19,6 +19,8 @@ import type {
   BarBoardSummary,
   HandoffOrderInput,
   RejectOrderInput,
+  RefuseAgeInput,
+  CancelUnavailableItemInput,
 } from './orders.types';
 
 // Crockford base32 alphabet (excludes I, L, O, U)
@@ -631,7 +633,7 @@ export class OrdersService {
         `SELECT oi.*, p.inventory_tracking, p.stock_on_hand
            FROM order_items oi
            JOIN products p ON p.id = oi.product_id
-          WHERE oi.order_id = $1`,
+          WHERE oi.order_id = $1 AND oi.status = 'ACTIVE'`,
         [orderId],
       );
 
@@ -1175,14 +1177,22 @@ export class OrdersService {
         }
       }
 
-      // Check age verification requirement across items
+      // Check active items and age verification requirement across active items
       const itemsRes = await client.query<any>(
         `SELECT oi.*, p.inventory_tracking, p.stock_on_hand, p.stock_reserved
            FROM order_items oi
            JOIN products p ON p.id = oi.product_id
-          WHERE oi.order_id = $1`,
+          WHERE oi.order_id = $1 AND oi.status = 'ACTIVE'`,
         [orderId],
       );
+
+      if (itemsRes.rows.length === 0) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'NO_ACTIVE_ITEMS_TO_FULFILL',
+          'All items in this order have been cancelled or refunded.',
+        );
+      }
 
       const hasAgeRestricted = itemsRes.rows.some((i) => i.age_verification_required);
       if (hasAgeRestricted && input?.age_verified !== true) {
@@ -1330,7 +1340,7 @@ export class OrdersService {
         `SELECT oi.*, p.inventory_tracking, p.stock_on_hand
            FROM order_items oi
            JOIN products p ON p.id = oi.product_id
-          WHERE oi.order_id = $1`,
+          WHERE oi.order_id = $1 AND oi.status = 'ACTIVE'`,
         [orderId],
       );
 
@@ -1368,9 +1378,17 @@ export class OrdersService {
         [input.reason.trim(), orderId],
       );
 
-      // 3. Initiate compensating refund if payment was already captured
-      if (order.payment_intent_id) {
-        if (this.refundsService) {
+      // 3. Initiate compensating refund for remaining unrefunded active items
+      if (order.payment_intent_id && this.refundsService) {
+        const unrefundedRes = await client.query<any>(
+          `SELECT COALESCE(SUM(line_total_minor), 0) as unrefunded_minor
+             FROM order_items
+            WHERE order_id = $1 AND status = 'ACTIVE'`,
+          [orderId],
+        );
+        const unrefundedMinor = Number(unrefundedRes.rows[0]?.unrefunded_minor || 0);
+
+        if (unrefundedMinor > 0) {
           try {
             await this.refundsService.requestRefund(
               venueId,
@@ -1378,7 +1396,7 @@ export class OrdersService {
               staffRole,
               {
                 payment_intent_id: order.payment_intent_id,
-                amount_minor: Number(order.total_minor),
+                amount_minor: unrefundedMinor,
                 reason: `BAR_ORDER_REJECTED: ${input.reason.trim()}`,
                 idempotency_key: `refund-rej-${orderId}`,
               },
@@ -1389,6 +1407,16 @@ export class OrdersService {
           }
         }
       }
+
+      await client.query(
+        `UPDATE order_items
+            SET status = 'REFUNDED_UNAVAILABLE',
+                refund_reason = $1,
+                refunded_amount_minor = line_total_minor,
+                refunded_at = now()
+          WHERE order_id = $2 AND status = 'ACTIVE'`,
+        [`Order rejected: ${input.reason.trim()}`, orderId],
+      );
 
       await client.query(
         `INSERT INTO audit_events (
@@ -1417,6 +1445,385 @@ export class OrdersService {
             order_id: orderId,
             public_code: order.public_code,
             reason: input.reason.trim(),
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-404: Age Restriction Refusal & Unavailable Product Refunds
+  // ---------------------------------------------------------------------------
+
+  async refuseAgeVerification(
+    venueId: string,
+    orderId: string,
+    staffId: string,
+    staffRole: string,
+    input?: RefuseAgeInput,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (['HANDED_OFF', 'CANCELLED'].includes(order.status)) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot refuse age verification on order in status '${order.status}'.`,
+        );
+      }
+
+      const reason = input?.reason?.trim() || 'Age verification failed or ID check refused (Law 42/2024)';
+
+      // 1. Fetch active order items
+      const itemsRes = await client.query<any>(
+        `SELECT oi.*, p.inventory_tracking, p.stock_on_hand
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = $1 AND oi.status = 'ACTIVE'`,
+        [orderId],
+      );
+
+      let targetItems = itemsRes.rows.filter((i) => i.age_verification_required);
+
+      if (input?.line_item_ids && input.line_item_ids.length > 0) {
+        const idSet = new Set(input.line_item_ids);
+        targetItems = itemsRes.rows.filter((i) => idSet.has(i.id));
+
+        for (const item of targetItems) {
+          if (!item.age_verification_required) {
+            throw new AuthHttpError(
+              HttpStatus.BAD_REQUEST,
+              'ITEM_NOT_AGE_RESTRICTED',
+              `Item '${item.title}' is not age-restricted.`,
+            );
+          }
+        }
+      }
+
+      if (targetItems.length === 0) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'NO_AGE_RESTRICTED_ITEMS',
+          'No active age-restricted items found in this order.',
+        );
+      }
+
+      // 2. Release reserved stock and issue compensating refunds
+      for (const item of targetItems) {
+        const qty = Number(item.quantity);
+        if (item.inventory_tracking) {
+          await client.query(
+            'UPDATE products SET stock_reserved = GREATEST(0, stock_reserved - $1), updated_at = now() WHERE id = $2',
+            [qty, item.product_id],
+          );
+
+          await client.query(
+            `INSERT INTO stock_movements (
+               tenant_id, venue_id, product_id, movement_type, quantity_delta,
+               balance_after, actor_id, actor_role, reference, notes
+             ) VALUES ($1, $2, $3, 'RESERVATION_RELEASE', $4, $5, $6, $7, $8, $9)`,
+            [
+              order.tenant_id,
+              venueId,
+              item.product_id,
+              -qty,
+              item.stock_on_hand,
+              staffId,
+              staffRole,
+              order.public_code,
+              `Law 42/2024 age check failed: ${reason}`,
+            ],
+          );
+        }
+
+        let refundId: string | null = null;
+        if (order.payment_intent_id && this.refundsService) {
+          try {
+            const refundRes = await this.refundsService.requestRefund(
+              venueId,
+              staffId,
+              staffRole,
+              {
+                payment_intent_id: order.payment_intent_id,
+                amount_minor: Number(item.line_total_minor),
+                reason: `AGE_RESTRICTION_REFUSED: ${reason}`,
+                idempotency_key: `refund-age-${orderId}-${item.id}`,
+              },
+              reqId,
+            );
+            refundId = refundRes.id;
+          } catch (refundErr) {
+            console.error('Refund error during age verification refusal:', refundErr);
+          }
+        }
+
+        await client.query(
+          `UPDATE order_items
+              SET status = 'REFUSED_AGE_RESTRICTION',
+                  refund_id = $1,
+                  refunded_amount_minor = $2,
+                  refund_reason = $3,
+                  refunded_at = now()
+            WHERE id = $4`,
+          [refundId, Number(item.line_total_minor), reason, item.id],
+        );
+      }
+
+      // 3. Check if all items in the order are now inactive
+      const activeCheck = await client.query<any>(
+        "SELECT COUNT(*) as count FROM order_items WHERE order_id = $1 AND status = 'ACTIVE'",
+        [orderId],
+      );
+      const remainingActive = Number(activeCheck.rows[0]?.count || 0);
+
+      if (remainingActive === 0) {
+        await client.query(
+          "UPDATE orders SET status = 'CANCELLED', cancellation_reason = $1, updated_at = now() WHERE id = $2",
+          [`Age verification failed: ${reason}`, orderId],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_AGE_VERIFICATION_REFUSED', 'ORDER', $6, $7)`,
+        [
+          order.tenant_id,
+          venueId,
+          reqId,
+          staffId,
+          staffRole,
+          orderId,
+          JSON.stringify({
+            reason,
+            refused_items_count: targetItems.length,
+            remaining_active_items: remainingActive,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderAgeVerificationRefused', $3)`,
+        [
+          order.tenant_id,
+          orderId,
+          JSON.stringify({
+            order_id: orderId,
+            public_code: order.public_code,
+            refused_items: targetItems.map((i) => i.id),
+            order_cancelled: remainingActive === 0,
+          }),
+        ],
+      );
+
+      await client.query('COMMIT');
+      return this.getOrderById(orderId);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async cancelUnavailableItem(
+    venueId: string,
+    orderId: string,
+    itemId: string,
+    staffId: string,
+    staffRole: string,
+    input: CancelUnavailableItemInput,
+    requestId?: string,
+  ): Promise<OrderDetail> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+
+    if (!input?.reason || input.reason.trim().length === 0) {
+      throw new AuthHttpError(
+        HttpStatus.BAD_REQUEST,
+        'MISSING_CANCELLATION_REASON',
+        'Cancellation reason is required.',
+      );
+    }
+    const reason = input.reason.trim();
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const oRes = await client.query<any>(
+        'SELECT * FROM orders WHERE id = $1 AND venue_id = $2 FOR UPDATE',
+        [orderId, venueId],
+      );
+      if (oRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_NOT_FOUND', 'Order not found.');
+      }
+      const order = oRes.rows[0];
+
+      if (['HANDED_OFF', 'CANCELLED'].includes(order.status)) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_ORDER_STATE',
+          `Cannot cancel items on order in status '${order.status}'.`,
+        );
+      }
+
+      const itemRes = await client.query<any>(
+        `SELECT oi.*, p.inventory_tracking, p.stock_on_hand
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+          WHERE oi.id = $1 AND oi.order_id = $2
+          FOR UPDATE`,
+        [itemId, orderId],
+      );
+
+      if (itemRes.rows.length === 0) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'ORDER_ITEM_NOT_FOUND', 'Order item not found.');
+      }
+      const item = itemRes.rows[0];
+
+      if (item.status !== 'ACTIVE') {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'ITEM_ALREADY_CANCELLED',
+          `Item '${item.title}' is already in status '${item.status}'.`,
+        );
+      }
+
+      // Release reserved stock
+      const qty = Number(item.quantity);
+      if (item.inventory_tracking) {
+        await client.query(
+          'UPDATE products SET stock_reserved = GREATEST(0, stock_reserved - $1), updated_at = now() WHERE id = $2',
+          [qty, item.product_id],
+        );
+
+        await client.query(
+          `INSERT INTO stock_movements (
+             tenant_id, venue_id, product_id, movement_type, quantity_delta,
+             balance_after, actor_id, actor_role, reference, notes
+           ) VALUES ($1, $2, $3, 'RESERVATION_RELEASE', $4, $5, $6, $7, $8, $9)`,
+          [
+            order.tenant_id,
+            venueId,
+            item.product_id,
+            -qty,
+            item.stock_on_hand,
+            staffId,
+            staffRole,
+            order.public_code,
+            `Item unavailable: ${reason}`,
+          ],
+        );
+      }
+
+      // Compensating refund
+      let refundId: string | null = null;
+      if (order.payment_intent_id && this.refundsService) {
+        try {
+          const refundRes = await this.refundsService.requestRefund(
+            venueId,
+            staffId,
+            staffRole,
+            {
+              payment_intent_id: order.payment_intent_id,
+              amount_minor: Number(item.line_total_minor),
+              reason: `PRODUCT_UNAVAILABLE: ${reason}`,
+              idempotency_key: `refund-unavail-${orderId}-${item.id}`,
+            },
+            reqId,
+          );
+          refundId = refundRes.id;
+        } catch (refundErr) {
+          console.error('Refund error during unavailable product cancellation:', refundErr);
+        }
+      }
+
+      await client.query(
+        `UPDATE order_items
+            SET status = 'REFUNDED_UNAVAILABLE',
+                refund_id = $1,
+                refunded_amount_minor = $2,
+                refund_reason = $3,
+                refunded_at = now()
+          WHERE id = $4`,
+        [refundId, Number(item.line_total_minor), reason, item.id],
+      );
+
+      // Check if all items in the order are now inactive
+      const activeCheck = await client.query<any>(
+        "SELECT COUNT(*) as count FROM order_items WHERE order_id = $1 AND status = 'ACTIVE'",
+        [orderId],
+      );
+      const remainingActive = Number(activeCheck.rows[0]?.count || 0);
+
+      if (remainingActive === 0) {
+        await client.query(
+          "UPDATE orders SET status = 'CANCELLED', cancellation_reason = $1, updated_at = now() WHERE id = $2",
+          [`All items unavailable: ${reason}`, orderId],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO audit_events (
+           tenant_id, venue_id, request_id, actor_id, actor_role,
+           action, target_type, target_id, metadata
+         ) VALUES ($1, $2, $3, $4, $5, 'ORDER_ITEM_REFUNDED_UNAVAILABLE', 'ORDER', $6, $7)`,
+        [
+          order.tenant_id,
+          venueId,
+          reqId,
+          staffId,
+          staffRole,
+          orderId,
+          JSON.stringify({
+            item_id: item.id,
+            item_title: item.title,
+            refunded_amount_minor: item.line_total_minor,
+            reason,
+            order_cancelled: remainingActive === 0,
+          }),
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO outbox_events (
+           tenant_id, aggregate_type, aggregate_id, event_type, payload
+         ) VALUES ($1, 'ORDER', $2, 'OrderItemRefundedUnavailable', $3)`,
+        [
+          order.tenant_id,
+          orderId,
+          JSON.stringify({
+            order_id: orderId,
+            item_id: item.id,
+            item_title: item.title,
+            refund_id: refundId,
+            order_cancelled: remainingActive === 0,
           }),
         ],
       );
@@ -1485,6 +1892,11 @@ export class OrdersService {
         restricted_product_type: i.restricted_product_type || 'NONE',
         age_verification_required: Boolean(i.age_verification_required),
         tax_category: i.tax_category || 'STANDARD',
+        status: i.status || 'ACTIVE',
+        refund_id: i.refund_id || null,
+        refunded_amount_minor: Number(i.refunded_amount_minor || 0),
+        refund_reason: i.refund_reason || null,
+        refunded_at: i.refunded_at ? new Date(i.refunded_at).toISOString() : null,
       })),
       created_at: new Date(row.created_at).toISOString(),
       updated_at: new Date(row.updated_at).toISOString(),

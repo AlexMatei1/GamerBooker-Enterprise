@@ -70,6 +70,11 @@ export interface CheckoutOrderResult {
   expires_at: string;
 }
 
+export type OrderItemStatus =
+  | 'ACTIVE'
+  | 'REFUNDED_UNAVAILABLE'
+  | 'REFUSED_AGE_RESTRICTION';
+
 export interface OrderItemDetail {
   id: string;
   product_id: string;
@@ -80,6 +85,11 @@ export interface OrderItemDetail {
   restricted_product_type: string;
   age_verification_required: boolean;
   tax_category: string;
+  status?: OrderItemStatus;
+  refund_id?: string | null;
+  refunded_amount_minor?: number;
+  refund_reason?: string | null;
+  refunded_at?: string | null;
 }
 
 export interface OrderDetail {
@@ -157,3 +167,59 @@ export interface OrderListResult {
     count_by_status: Record<string, number>;
   };
 }
+
+export interface RefuseAgeInput {
+  reason?: string;
+  line_item_ids?: string[];
+}
+
+export interface CancelUnavailableItemInput {
+  reason: string;
+}
+
+export interface StockReconciliationCountItem {
+  product_id: string;
+  counted_stock: number;
+  notes?: string;
+}
+
+export interface PerformStockReconciliationInput {
+  items: StockReconciliationCountItem[];
+  notes?: string;
+}
+
+export interface StockReconciliationItemDetail {
+  id: string;
+  product_id: string;
+  product_title?: string;
+  expected_stock: number;
+  counted_stock: number;
+  discrepancy_quantity: number;
+  discrepancy_value_minor: number;
+  adjustment_type: 'NONE' | 'SHRINKAGE' | 'SURPLUS';
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface StockReconciliationAuditDetail {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  performed_by: string;
+  performed_by_name?: string;
+  items_counted: number;
+  discrepancy_items_count: number;
+  total_discrepancy_units: number;
+  total_shrinkage_value_minor: number;
+  notes?: string | null;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  items: StockReconciliationItemDetail[];
+  created_at: string;
+  completed_at: string;
+}
+
+export interface StockReconciliationListResult {
+  audits: StockReconciliationAuditDetail[];
+  total_count: number;
+}
+
