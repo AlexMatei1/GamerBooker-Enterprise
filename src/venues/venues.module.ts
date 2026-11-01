@@ -12,6 +12,8 @@ import { LayoutController } from './layout.controller';
 import { LayoutService } from './layout.service';
 import { InspectorController } from './inspector.controller';
 import { InspectorService } from './inspector.service';
+import { LayoutPublishController } from './layout-publish.controller';
+import { LayoutPublishService } from './layout-publish.service';
 
 @Module({
   imports: [AuthModule],
@@ -22,6 +24,7 @@ import { InspectorService } from './inspector.service';
     OperationsController,
     LayoutController,
     InspectorController,
+    LayoutPublishController,
   ],
   providers: [
     VenuesService,
@@ -30,6 +33,7 @@ import { InspectorService } from './inspector.service';
     OperationsService,
     LayoutService,
     InspectorService,
+    LayoutPublishService,
   ],
   exports: [
     VenuesService,
@@ -38,6 +42,7 @@ import { InspectorService } from './inspector.service';
     OperationsService,
     LayoutService,
     InspectorService,
+    LayoutPublishService,
   ],
 })
 export class VenuesModule {}
