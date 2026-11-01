@@ -29,6 +29,7 @@ export interface BookingRow {
   customer_id: string;
   hold_id: string | null;
   quote_id: string;
+  package_id?: string | null;
   status: BookingStatus;
   type: BookingType;
   starts_at: Date;
@@ -63,6 +64,7 @@ export interface BookingResult {
   customer_id: string;
   hold_id: string | null;
   quote_id: string;
+  package_id?: string | null;
   status: BookingStatus;
   type: BookingType;
   starts_at: string;

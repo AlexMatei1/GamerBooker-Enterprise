@@ -10,6 +10,7 @@ export interface HoldResult {
   venue_id: string;
   customer_id: string;
   quote_id: string;
+  package_id?: string | null;
   idempotency_key?: string | null;
   status: HoldStatus;
   resource_ids: string[];
@@ -27,6 +28,7 @@ export interface HoldRow {
   venue_id: string;
   customer_id: string;
   quote_id: string;
+  package_id?: string | null;
   idempotency_key: string | null;
   status: HoldStatus;
   resource_ids: string[];

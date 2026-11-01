@@ -18,6 +18,7 @@ export interface PriceQuoteRow {
   id: string;
   venue_id: string;
   customer_id: string;
+  package_id?: string | null;
   starts_at: Date;
   ends_at: Date;
   items_snapshot: QuoteItem[];
@@ -181,13 +182,14 @@ export class QuotesService {
     // 8. Persist into price_quotes
     await pool.query(
       `INSERT INTO price_quotes
-        (id, venue_id, customer_id, starts_at, ends_at, items_snapshot, policy_snapshot,
+        (id, venue_id, customer_id, package_id, starts_at, ends_at, items_snapshot, policy_snapshot,
          total_minor, due_now_minor, balance_minor, currency, signature, expires_at)
-       VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9, $10, 'RON', $11, $12::timestamptz)`,
+       VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9, $10, $11, 'RON', $12, $13::timestamptz)`,
       [
         quoteId,
         venueId,
         customerId,
+        input.package_id || null,
         start.toISOString(),
         end.toISOString(),
         JSON.stringify(items),
@@ -204,6 +206,7 @@ export class QuotesService {
       quote_id: quoteId,
       venue_id: venueId,
       customer_id: customerId,
+      package_id: input.package_id || null,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
       currency: 'RON',
@@ -233,6 +236,7 @@ export class QuotesService {
       quote_id: row.id,
       venue_id: row.venue_id,
       customer_id: row.customer_id,
+      package_id: row.package_id || null,
       starts_at: new Date(row.starts_at).toISOString(),
       ends_at: new Date(row.ends_at).toISOString(),
       currency: 'RON',

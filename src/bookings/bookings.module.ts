@@ -11,6 +11,7 @@ import { BookingsService } from './bookings.service';
 import { CheckoutService } from './checkout.service';
 import { LifecycleService } from './lifecycle.service';
 import { GroupService } from './group.service';
+import { PackagesService } from './packages.service';
 import { SchedulesController } from './schedules.controller';
 import { AvailabilityController } from './availability.controller';
 import { PoliciesController } from './policies.controller';
@@ -20,6 +21,7 @@ import { BookingsController } from './bookings.controller';
 import { CheckoutController } from './checkout.controller';
 import { LifecycleController } from './lifecycle.controller';
 import { GroupController } from './group.controller';
+import { PackagesController } from './packages.controller';
 
 @Module({
   imports: [AuthModule, PaymentsModule],
@@ -33,6 +35,7 @@ import { GroupController } from './group.controller';
     CheckoutController,
     LifecycleController,
     GroupController,
+    PackagesController,
   ],
   providers: [
     SchedulesService,
@@ -45,6 +48,7 @@ import { GroupController } from './group.controller';
     CheckoutService,
     LifecycleService,
     GroupService,
+    PackagesService,
   ],
   exports: [
     SchedulesService,
@@ -57,6 +61,7 @@ import { GroupController } from './group.controller';
     CheckoutService,
     LifecycleService,
     GroupService,
+    PackagesService,
   ],
 })
 export class BookingsModule {}

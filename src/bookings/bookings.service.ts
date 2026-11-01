@@ -49,6 +49,7 @@ export class BookingsService {
       customer_id: row.customer_id,
       hold_id: row.hold_id,
       quote_id: row.quote_id,
+      package_id: row.package_id || null,
       status: row.status,
       type: row.type,
       starts_at: new Date(row.starts_at).toISOString(),
@@ -193,15 +194,17 @@ export class BookingsService {
         balance_minor: Number(quote.balance_minor),
       };
 
+      const packageId = hold.package_id || (quote as any).package_id || null;
+
       const bookingRes = await client.query<BookingRow>(
         `INSERT INTO bookings (
-           public_code, tenant_id, venue_id, customer_id, hold_id, quote_id,
+           public_code, tenant_id, venue_id, customer_id, hold_id, quote_id, package_id,
            status, type, starts_at, ends_at, timezone, resource_ids, atomic_resource_ids,
            total_minor, due_now_minor, paid_minor, balance_minor, currency,
            price_snapshot, policy_snapshot, version, idempotency_key
          )
-         VALUES ($1, $2, $3, $4, $5, $6, 'CONFIRMED', 'SINGLE', $7, $8, 'Europe/Bucharest',
-                 $9, $10, $11, $12, $13, $14, 'RON', $15, $16, 1, $17)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'CONFIRMED', 'SINGLE', $8, $9, 'Europe/Bucharest',
+                 $10, $11, $12, $13, $14, $15, 'RON', $16, $17, 1, $18)
          RETURNING *`,
         [
           publicCode,
@@ -210,6 +213,7 @@ export class BookingsService {
           hold.customer_id,
           hold.id,
           hold.quote_id,
+          packageId,
           hold.starts_at,
           hold.ends_at,
           hold.resource_ids,
@@ -238,6 +242,86 @@ export class BookingsService {
           WHERE hold_id = $1`,
         [hold.id, booking.id],
       );
+
+      // 7b. If booking package, provision automatic pre-order for included consumables
+      if (packageId) {
+        const pkgItemsRes = await client.query<any>(
+          `SELECT pi.*, p.title, p.price_minor, p.tax_category,
+                  p.age_verification_required, p.restricted_product_type
+             FROM package_items pi
+             JOIN products p ON p.id = pi.product_id
+            WHERE pi.package_id = $1`,
+          [packageId],
+        );
+
+        if (pkgItemsRes.rows.length > 0) {
+          const totalOrderMinor = pkgItemsRes.rows.reduce(
+            (sum: number, r: any) => sum + Number(r.allocated_price_minor || r.price_minor * r.quantity),
+            0,
+          );
+          const orderPublicCode = `ORD-${randomUUID().slice(0, 8).toUpperCase()}`;
+
+          const orderRes = await client.query<any>(
+            `INSERT INTO orders (
+               public_code, tenant_id, venue_id, booking_id, customer_id,
+               order_type, fulfillment_mode, target_resource_id, status,
+               total_minor, currency, notes
+             ) VALUES ($1, $2, $3, $4, $5, 'PREORDER', 'AT_STATION', $6, 'PLACED', $7, 'RON', $8)
+             RETURNING id`,
+            [
+              orderPublicCode,
+              hold.tenant_id,
+              hold.venue_id,
+              booking.id,
+              hold.customer_id,
+              hold.resource_ids[0],
+              Math.max(totalOrderMinor, 1),
+              'Included in booking package',
+            ],
+          );
+          const orderId = orderRes.rows[0].id;
+
+          for (const item of pkgItemsRes.rows) {
+            const itemAllocated = Number(item.allocated_price_minor || 0);
+            const lineTotal = itemAllocated > 0 ? itemAllocated : Number(item.price_minor) * Number(item.quantity);
+            const unitPrice = Math.max(1, Math.round(lineTotal / Number(item.quantity)));
+
+            await client.query(
+              `INSERT INTO order_items (
+                 order_id, product_id, title, unit_price_minor, quantity,
+                 line_total_minor, restricted_product_type, age_verification_required,
+                 tax_category, status
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVE')`,
+              [
+                orderId,
+                item.product_id,
+                item.title,
+                unitPrice,
+                item.quantity,
+                lineTotal,
+                item.restricted_product_type || 'NONE',
+                Boolean(item.age_verification_required),
+                item.tax_category || 'STANDARD',
+              ],
+            );
+          }
+
+          await client.query(
+            `INSERT INTO outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload)
+             VALUES ($1, 'ORDER', $2, 'OrderConfirmed', $3)`,
+            [
+              hold.tenant_id,
+              orderId,
+              JSON.stringify({
+                order_id: orderId,
+                public_code: orderPublicCode,
+                booking_id: booking.id,
+                status: 'PLACED',
+              }),
+            ],
+          );
+        }
+      }
 
       // 8. Append-only audit log
       await client.query(

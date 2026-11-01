@@ -16,6 +16,7 @@ export class HoldsService {
       venue_id: row.venue_id,
       customer_id: row.customer_id,
       quote_id: row.quote_id,
+      package_id: row.package_id || null,
       idempotency_key: row.idempotency_key,
       status: row.status,
       resource_ids: row.resource_ids,
@@ -73,7 +74,9 @@ export class HoldsService {
       );
     }
 
-    const requestedResourceIds = quote.items.map((it: QuoteItem) => it.resource_id);
+    const requestedResourceIds = quote.items
+      .map((it: QuoteItem) => it.resource_id)
+      .filter((id): id is string => Boolean(id));
     if (requestedResourceIds.length === 0) {
       throw new AuthHttpError(
         HttpStatus.BAD_REQUEST,
@@ -186,16 +189,17 @@ export class HoldsService {
       // 9. Insert hold record
       const holdRes = await client.query<HoldRow>(
         `INSERT INTO holds (
-           tenant_id, venue_id, customer_id, quote_id, idempotency_key,
+           tenant_id, venue_id, customer_id, quote_id, package_id, idempotency_key,
            status, resource_ids, atomic_resource_ids, starts_at, ends_at, expires_at
          )
-         VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           tenantId,
           quote.venue_id,
           customerId,
           quote.quote_id,
+          quote.package_id || null,
           idempotencyKey || null,
           requestedResourceIds,
           atomicResourceIds,
@@ -205,6 +209,64 @@ export class HoldsService {
         ],
       );
       const holdRow = holdRes.rows[0];
+
+      // 9b. If package hold, atomically reserve package consumable products
+      if (quote.package_id) {
+        const pkgItemsRes = await client.query<{ product_id: string; quantity: number }>(
+          'SELECT product_id, quantity FROM package_items WHERE package_id = $1 ORDER BY product_id ASC',
+          [quote.package_id],
+        );
+        const prodIds = pkgItemsRes.rows.map((p) => p.product_id);
+        if (prodIds.length > 0) {
+          const prodsRes = await client.query<any>(
+            'SELECT * FROM products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+            [prodIds],
+          );
+          const prodsMap = new Map<string, any>(prodsRes.rows.map((p) => [p.id, p]));
+
+          for (const item of pkgItemsRes.rows) {
+            const prod = prodsMap.get(item.product_id);
+            if (!prod) {
+              throw new AuthHttpError(
+                HttpStatus.BAD_REQUEST,
+                'PACKAGE_PRODUCT_NOT_FOUND',
+                'Product in package not found.',
+              );
+            }
+            if (prod.inventory_tracking) {
+              const available = Number(prod.stock_on_hand) - Number(prod.stock_reserved);
+              if (available < item.quantity) {
+                throw new AuthHttpError(
+                  HttpStatus.BAD_REQUEST,
+                  'INSUFFICIENT_STOCK',
+                  `Insufficient stock for package product '${prod.title}'. Available: ${available}, required: ${item.quantity}.`,
+                );
+              }
+
+              await client.query(
+                'UPDATE products SET stock_reserved = stock_reserved + $1, updated_at = now() WHERE id = $2',
+                [item.quantity, item.product_id],
+              );
+
+              await client.query(
+                `INSERT INTO stock_movements (
+                   tenant_id, venue_id, product_id, movement_type, quantity_delta,
+                   balance_after, actor_id, actor_role, reference, notes
+                 ) VALUES ($1, $2, $3, 'RESERVATION_HOLD', $4, $5, $6, 'CUSTOMER', $7, 'Package hold reservation')`,
+                [
+                  tenantId,
+                  quote.venue_id,
+                  item.product_id,
+                  item.quantity,
+                  prod.stock_on_hand,
+                  customerId,
+                  holdRow.id,
+                ],
+              );
+            }
+          }
+        }
+      }
 
       // 10. Insert claims per atomic resource (protected by GiST exclusion constraint)
       try {
@@ -351,6 +413,30 @@ export class HoldsService {
         [holdId],
       );
 
+      // If package hold, release reserved stock
+      if (row.package_id) {
+        const pkgItemsRes = await client.query<{ product_id: string; quantity: number }>(
+          'SELECT product_id, quantity FROM package_items WHERE package_id = $1',
+          [row.package_id],
+        );
+        for (const item of pkgItemsRes.rows) {
+          const qty = Number(item.quantity);
+          await client.query(
+            'UPDATE products SET stock_reserved = GREATEST(0, stock_reserved - $1), updated_at = now() WHERE id = $2',
+            [qty, item.product_id],
+          );
+          await client.query(
+            `INSERT INTO stock_movements (
+               tenant_id, venue_id, product_id, movement_type, quantity_delta,
+               balance_after, actor_id, actor_role, reference, notes
+             )
+             SELECT p.tenant_id, p.venue_id, p.id, 'RESERVATION_RELEASE', $1, p.stock_on_hand, $2, 'CUSTOMER', $3, 'Package hold released'
+               FROM products p WHERE p.id = $4`,
+            [-qty, customerId || row.customer_id, holdId, item.product_id],
+          );
+        }
+      }
+
       await client.query(
         `INSERT INTO outbox_events (
            tenant_id, aggregate_type, aggregate_id, event_type, payload
@@ -380,33 +466,64 @@ export class HoldsService {
     try {
       await client.query('BEGIN');
 
-      const res = await client.query<{ id: string; tenant_id: string }>(`
-        WITH expired_batch AS (
-          SELECT id, tenant_id FROM holds
-           WHERE status = 'ACTIVE' AND expires_at <= now()
-           FOR UPDATE SKIP LOCKED
-        ),
-        updated_holds AS (
-          UPDATE holds h
-             SET status = 'EXPIRED', updated_at = now()
-            FROM expired_batch eb
-           WHERE h.id = eb.id
-          RETURNING h.id, h.tenant_id
-        ),
-        updated_claims AS (
-          UPDATE resource_claims rc
-             SET state = 'RELEASED', updated_at = now()
-            FROM updated_holds uh
-           WHERE rc.hold_id = uh.id
-        )
-        INSERT INTO outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload)
-        SELECT uh.tenant_id, 'HOLD', uh.id, 'HoldExpired', jsonb_build_object('hold_id', uh.id)
-          FROM updated_holds uh
-        RETURNING aggregate_id;
+      const expiredBatchRes = await client.query<{ id: string; tenant_id: string; package_id: string | null }>(`
+        SELECT id, tenant_id, package_id FROM holds
+         WHERE status = 'ACTIVE' AND expires_at <= now()
+         FOR UPDATE SKIP LOCKED
       `);
 
+      if (expiredBatchRes.rows.length === 0) {
+        await client.query('COMMIT');
+        return { expired_count: 0 };
+      }
+
+      const holdIds = expiredBatchRes.rows.map((r) => r.id);
+
+      await client.query(
+        `UPDATE holds SET status = 'EXPIRED', updated_at = now() WHERE id = ANY($1::uuid[])`,
+        [holdIds],
+      );
+
+      await client.query(
+        `UPDATE resource_claims SET state = 'RELEASED', updated_at = now() WHERE hold_id = ANY($1::uuid[])`,
+        [holdIds],
+      );
+
+      // Release package items stock for expired holds
+      for (const row of expiredBatchRes.rows) {
+        if (row.package_id) {
+          const pkgItemsRes = await client.query<{ product_id: string; quantity: number }>(
+            'SELECT product_id, quantity FROM package_items WHERE package_id = $1',
+            [row.package_id],
+          );
+          for (const item of pkgItemsRes.rows) {
+            const qty = Number(item.quantity);
+            await client.query(
+              'UPDATE products SET stock_reserved = GREATEST(0, stock_reserved - $1), updated_at = now() WHERE id = $2',
+              [qty, item.product_id],
+            );
+            await client.query(
+              `INSERT INTO stock_movements (
+                 tenant_id, venue_id, product_id, movement_type, quantity_delta,
+                 balance_after, actor_id, actor_role, reference, notes
+               )
+               SELECT p.tenant_id, p.venue_id, p.id, 'RESERVATION_RELEASE', $1, p.stock_on_hand, NULL, 'SYSTEM', $2, 'Package hold expired'
+                 FROM products p WHERE p.id = $3`,
+              [-qty, row.id, item.product_id],
+            );
+          }
+        }
+      }
+
+      await client.query(
+        `INSERT INTO outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload)
+         SELECT h.tenant_id, 'HOLD', h.id, 'HoldExpired', jsonb_build_object('hold_id', h.id)
+           FROM holds h WHERE h.id = ANY($1::uuid[])`,
+        [holdIds],
+      );
+
       await client.query('COMMIT');
-      return { expired_count: res.rowCount || 0 };
+      return { expired_count: holdIds.length };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw err;
