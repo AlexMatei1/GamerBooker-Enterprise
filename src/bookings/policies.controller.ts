@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -77,5 +79,31 @@ export class PoliciesController {
       settings,
     });
     return { policy };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENG-207: Customer preview and clear examples for pricing & policies
+  // ---------------------------------------------------------------------------
+
+  @Get('dashboard/venues/:venue_id/policies/preview-estimates')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
+  async getPolicyPreviewEstimates(
+    @Param('venue_id') venueId: string,
+    @Query('resource_id') resourceId?: string,
+  ) {
+    return this.policiesService.previewPolicyEstimates(venueId, undefined, resourceId);
+  }
+
+  @Post('dashboard/venues/:venue_id/policies/preview-estimates')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER', 'VENUE_MANAGER')
+  @HttpCode(HttpStatus.OK)
+  async postPolicyPreviewEstimates(
+    @Param('venue_id') venueId: string,
+    @Body('settings') settings?: Partial<PolicySettings>,
+    @Body('resource_id') resourceId?: string,
+  ) {
+    return this.policiesService.previewPolicyEstimates(venueId, settings, resourceId);
   }
 }

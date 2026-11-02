@@ -40,3 +40,54 @@ export interface PolicySnapshot {
   profile_id?: string;
   settings: PolicySettings;
 }
+
+export interface PolicyEstimateScenario {
+  scenario_id: string;
+  name: string;
+  duration_minutes: number;
+  players_count: number;
+  total_price_minor: number;
+  due_now_minor: number;
+  remaining_balance_minor: number;
+  per_player_share_minor?: number;
+  per_player_due_now_minor?: number;
+  cancellation_deadline_hours: number;
+  penalty_on_late_cancel_minor: number;
+  customer_display: {
+    price_formatted: string;
+    due_now_formatted: string;
+    balance_formatted: string;
+    free_cancellation_text: string;
+    settlement_options_text: string;
+  };
+}
+
+export interface ResourcePolicyComparisonItem {
+  resource_id: string;
+  name: string;
+  type: string;
+  room_name: string;
+  zone_name: string | null;
+  effective_hourly_rate_minor: number;
+  rate_source: string;
+  effective_deposit_percentage: number;
+  policy_source: string;
+  diff_from_venue_default_minor: number;
+}
+
+export interface PolicyPreviewResult {
+  venue_id: string;
+  preview_resource_id?: string;
+  applied_policy_level: string;
+  effective_settings: PolicySettings;
+  base_hourly_rate_minor: number;
+  currency: string;
+  scenarios: PolicyEstimateScenario[];
+  resource_comparisons: ResourcePolicyComparisonItem[];
+  customer_disclosures: {
+    free_cancellation_disclosure: string;
+    deposit_disclosure: string;
+    statutory_notice: string;
+  };
+  validation_warnings: string[];
+}
