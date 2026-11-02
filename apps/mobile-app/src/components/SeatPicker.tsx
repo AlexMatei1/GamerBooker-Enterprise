@@ -2,12 +2,10 @@ import React, { useState } from 'react';
 import {
   Monitor,
   Cpu,
-  Check,
   Clock,
   ChevronRight,
   LayoutGrid,
   Map,
-  Sparkles,
 } from 'lucide-react';
 import type { StationItem } from '../types/mobile';
 
@@ -44,29 +42,26 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-extrabold">Step 1 of 2</span>
-          <h1 className="text-2xl font-black text-white tracking-tight">Pick Your Rig</h1>
-          <p className="text-xs text-slate-400">Select your battle station & session window</p>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 block">Step 1 of 2</span>
+          <h1 className="text-2xl font-bold tracking-tight text-white mt-0.5">Select Station</h1>
         </div>
 
-        {/* View Switcher Toggle */}
-        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+        {/* View Mode Toggle */}
+        <div className="flex bg-zinc-900 p-0.5 rounded-lg border border-white/[0.08] text-xs">
           <button
             onClick={() => setViewMode('map')}
-            className={`p-1.5 rounded-lg flex items-center gap-1 transition-colors ${
-              viewMode === 'map' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+            className={`px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
+              viewMode === 'map' ? 'bg-zinc-800 text-white font-medium shadow-sm' : 'text-zinc-500 hover:text-white'
             }`}
-            title="Floor Seating Map"
           >
             <Map className="w-3.5 h-3.5" />
             <span className="text-[10px]">Map</span>
           </button>
           <button
             onClick={() => setViewMode('list')}
-            className={`p-1.5 rounded-lg flex items-center gap-1 transition-colors ${
-              viewMode === 'list' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+            className={`px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
+              viewMode === 'list' ? 'bg-zinc-800 text-white font-medium shadow-sm' : 'text-zinc-500 hover:text-white'
             }`}
-            title="Detailed Specs List"
           >
             <LayoutGrid className="w-3.5 h-3.5" />
             <span className="text-[10px]">List</span>
@@ -74,16 +69,16 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
         </div>
       </div>
 
-      {/* Zone filter tabs */}
+      {/* Zone Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
         {zones.map((zone) => (
           <button
             key={zone}
             onClick={() => setSelectedZone(zone)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+            className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
               selectedZone === zone
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/25'
-                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                ? 'bg-white text-zinc-950 font-semibold shadow-sm'
+                : 'bg-zinc-900 text-zinc-400 border border-white/[0.06] hover:text-white'
             }`}
           >
             {zone}
@@ -91,23 +86,23 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
         ))}
       </div>
 
-      {/* Time Slot Picker */}
-      <div className="glass-card p-3 rounded-2xl space-y-2">
+      {/* Time Window Selector */}
+      <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-white/[0.06] space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-300 font-bold flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-cyan-400" /> Start Time Window
+          <span className="text-zinc-400 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-zinc-400" /> Start Window
           </span>
-          <span className="text-cyan-400 font-mono font-bold text-[11px]">{selectedTimeSlot}</span>
+          <span className="font-mono text-zinc-200 text-[11px] font-medium">{selectedTimeSlot}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {timeSlots.map((slot) => (
             <button
               key={slot}
               onClick={() => setSelectedTimeSlot(slot)}
-              className={`py-1.5 px-2 rounded-xl text-[11px] font-mono font-bold transition-all text-center ${
+              className={`py-1.5 px-2 rounded-lg text-[11px] font-mono transition-colors text-center ${
                 selectedTimeSlot === slot
-                  ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/50'
-                  : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                  ? 'bg-white text-zinc-950 font-semibold shadow-sm'
+                  : 'bg-zinc-900 text-zinc-400 border border-white/[0.06] hover:text-white'
               }`}
             >
               {slot}
@@ -117,20 +112,20 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
       </div>
 
       {/* Duration Selector */}
-      <div className="glass-card p-3 rounded-2xl space-y-2">
+      <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-white/[0.06] space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-300 font-bold">Session Duration</span>
-          <span className="text-cyan-400 font-mono font-bold">{selectedDuration} Hours</span>
+          <span className="text-zinc-400">Duration</span>
+          <span className="font-mono text-zinc-200 font-medium">{selectedDuration} Hours</span>
         </div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-1.5">
           {[1, 2, 3, 5].map((hours) => (
             <button
               key={hours}
               onClick={() => onSelectDuration(hours)}
-              className={`py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`py-1.5 rounded-lg text-xs font-mono font-medium transition-colors ${
                 selectedDuration === hours
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
-                  : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                  ? 'bg-white text-zinc-950 font-semibold shadow-sm'
+                  : 'bg-zinc-900 text-zinc-400 border border-white/[0.06] hover:text-white'
               }`}
             >
               {hours}h
@@ -139,37 +134,34 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
         </div>
       </div>
 
-      {/* VIEW MODE 1: Interactive Floor Map Seating Chart */}
+      {/* MAP VIEW */}
       {viewMode === 'map' && (
-        <div className="glass-card p-4 rounded-3xl border border-slate-800 space-y-3">
-          <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800">
-            <span className="font-extrabold text-white flex items-center gap-1.5">
-              <Map className="w-3.5 h-3.5 text-cyan-400" /> Tap Seat on Arena Floor
-            </span>
+        <div className="p-4 rounded-xl bg-zinc-900/60 border border-white/[0.06] space-y-3">
+          <div className="flex items-center justify-between text-xs pb-2 border-b border-white/[0.06]">
+            <span className="font-medium text-zinc-300">Floor Seating Chart</span>
             <div className="flex items-center gap-3 text-[10px]">
               <span className="flex items-center gap-1 text-emerald-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" /> Free
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Free
               </span>
-              <span className="flex items-center gap-1 text-cyan-400">
-                <span className="w-2 h-2 rounded-full bg-cyan-400" /> Selected
+              <span className="flex items-center gap-1 text-white">
+                <span className="w-1.5 h-1.5 rounded-full bg-white" /> Selected
               </span>
-              <span className="flex items-center gap-1 text-slate-500">
-                <span className="w-2 h-2 rounded-full bg-slate-600" /> In Use
+              <span className="flex items-center gap-1 text-zinc-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" /> In Use
               </span>
             </div>
           </div>
 
-          {/* 2D Seating Layout Visual Grid */}
-          <div className="p-3 rounded-2xl bg-slate-950/90 border border-slate-900 grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-3 gap-2">
             {filteredStations.map((station) => {
               const isSelected = selectedStation?.id === station.id;
               const isOccupied = station.status === 'OCCUPIED';
 
-              let seatStyle = 'bg-slate-900 border-slate-800 text-slate-300 hover:border-emerald-500/50';
+              let cardStyle = 'bg-zinc-900/90 border-white/[0.06] text-zinc-300 hover:border-white/[0.16]';
               if (isOccupied) {
-                seatStyle = 'bg-slate-950/60 border-slate-800/40 text-slate-600 opacity-40 cursor-not-allowed';
+                cardStyle = 'bg-zinc-950/40 border-white/[0.02] text-zinc-600 opacity-40 cursor-not-allowed';
               } else if (isSelected) {
-                seatStyle = 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400';
+                cardStyle = 'bg-zinc-800 border-white text-white shadow-md ring-1 ring-white/50';
               }
 
               return (
@@ -177,19 +169,17 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
                   key={station.id}
                   disabled={isOccupied}
                   onClick={() => onSelectStation(station)}
-                  className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center justify-between h-24 ${seatStyle}`}
+                  className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-between h-20 ${cardStyle}`}
                 >
-                  <div className="flex items-center justify-between w-full">
-                    <Monitor className={`w-3.5 h-3.5 ${isSelected ? 'text-cyan-400' : 'text-slate-500'}`} />
-                    <span className="text-[9px] font-mono font-bold text-slate-400">
-                      {(station.hourlyRate / 100).toFixed(0)}L
-                    </span>
+                  <div className="flex items-center justify-between w-full text-[10px] text-zinc-500 font-mono">
+                    <span>{station.zone === 'VIP Stage' ? 'VIP' : 'PC'}</span>
+                    <span>{(station.hourlyRate / 100).toFixed(0)}L</span>
                   </div>
 
-                  <span className="font-mono font-black text-xs text-white my-1">{station.name}</span>
+                  <span className="font-mono font-semibold text-xs text-zinc-100">{station.name}</span>
 
-                  <span className={`text-[9px] font-bold uppercase ${isSelected ? 'text-cyan-400' : isOccupied ? 'text-slate-600' : 'text-emerald-400'}`}>
-                    {isSelected ? '✓ Selected' : isOccupied ? 'In Session' : 'Ready'}
+                  <span className={`text-[9px] font-medium uppercase ${isSelected ? 'text-white' : isOccupied ? 'text-zinc-600' : 'text-emerald-400'}`}>
+                    {isSelected ? 'Selected' : isOccupied ? 'In Session' : 'Available'}
                   </span>
                 </button>
               );
@@ -198,9 +188,9 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
         </div>
       )}
 
-      {/* VIEW MODE 2: Detailed Hardware Cards */}
+      {/* LIST VIEW */}
       {viewMode === 'list' && (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {filteredStations.map((station) => {
             const isSelected = selectedStation?.id === station.id;
             const isOccupied = station.status === 'OCCUPIED';
@@ -209,59 +199,38 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
               <div
                 key={station.id}
                 onClick={() => !isOccupied && onSelectStation(station)}
-                className={`glass-card p-3.5 rounded-2xl border transition-all ${
+                className={`p-3 rounded-xl border transition-all ${
                   isOccupied
-                    ? 'opacity-40 cursor-not-allowed border-slate-800/40'
+                    ? 'opacity-40 cursor-not-allowed border-white/[0.02] bg-zinc-950'
                     : isSelected
-                    ? 'border-cyan-400 bg-cyan-950/20 shadow-lg shadow-cyan-500/15 cursor-pointer'
-                    : 'border-slate-800 hover:border-slate-700 cursor-pointer'
+                    ? 'border-white bg-zinc-800 text-white cursor-pointer shadow-md'
+                    : 'border-white/[0.06] bg-zinc-900/80 hover:border-white/[0.12] cursor-pointer'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${
-                        isSelected
-                          ? 'bg-cyan-500 text-slate-950'
-                          : isOccupied
-                          ? 'bg-slate-800 text-slate-500'
-                          : 'bg-slate-900 border border-slate-800 text-cyan-400'
-                      }`}
-                    >
-                      <Monitor className="w-5 h-5" />
+                    <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-white/[0.06] flex items-center justify-center text-zinc-300">
+                      <Monitor className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-extrabold text-sm text-white">{station.name}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-semibold">
+                        <span className="font-semibold text-xs text-white">{station.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400">
                           {station.zone}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                        <Cpu className="w-3 h-3 text-cyan-400" /> {station.gpu}
+                      <p className="text-[11px] text-zinc-400 flex items-center gap-1 mt-0.5">
+                        <Cpu className="w-3 h-3 text-zinc-500" /> {station.gpu}
                       </p>
                     </div>
                   </div>
 
                   <div className="text-right font-mono">
-                    <div className="text-sm font-black text-cyan-300">
+                    <div className="text-xs font-semibold text-zinc-100">
                       {(station.hourlyRate / 100).toFixed(0)} RON
                     </div>
-                    <div className="text-[10px] text-slate-500">per hour</div>
+                    <div className="text-[10px] text-zinc-500">per hour</div>
                   </div>
-                </div>
-
-                <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
-                  <span className="truncate max-w-[210px]">{station.peripherals}</span>
-                  {isOccupied ? (
-                    <span className="text-amber-400 font-semibold font-mono">In Session</span>
-                  ) : isSelected ? (
-                    <span className="text-cyan-400 font-bold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Selected
-                    </span>
-                  ) : (
-                    <span className="text-emerald-400 font-semibold">Available</span>
-                  )}
                 </div>
               </div>
             );
@@ -269,25 +238,23 @@ export const SeatPicker: React.FC<SeatPickerProps> = ({
         </div>
       )}
 
-      {/* Floating Bottom Action Bar */}
+      {/* Floating Checkout Button */}
       {selectedStation && (
-        <div className="fixed bottom-16 left-0 right-0 p-4 max-w-md mx-auto z-40 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent">
-          <div className="glass-card p-3.5 rounded-3xl border border-cyan-500/40 flex items-center justify-between shadow-2xl bg-slate-950/90">
+        <div className="fixed bottom-16 left-0 right-0 p-4 max-w-md mx-auto z-40 bg-gradient-to-t from-black via-black/90 to-transparent">
+          <div className="p-3.5 rounded-2xl bg-zinc-900 border border-white/[0.12] flex items-center justify-between shadow-2xl">
             <div>
-              <div className="text-[10px] uppercase text-cyan-400 font-bold flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Station Selected
-              </div>
-              <div className="text-xs font-bold text-white">
+              <div className="text-[10px] font-mono uppercase text-zinc-500">Selected Station</div>
+              <div className="text-xs font-semibold text-white">
                 {selectedStation.name} &bull; {selectedDuration}h Session
               </div>
-              <div className="text-xs text-slate-400 font-mono mt-0.5">
-                Deposit 30%: <strong className="text-cyan-300">{((selectedStation.hourlyRate * selectedDuration * 0.3) / 100).toFixed(0)} RON</strong>
+              <div className="text-xs text-zinc-400 font-mono mt-0.5">
+                Total: <strong className="text-white">{((selectedStation.hourlyRate * selectedDuration) / 100).toFixed(0)} RON</strong>
               </div>
             </div>
 
             <button
               onClick={onProceedToCheckout}
-              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/25 hover:brightness-110 active:scale-95 transition-transform"
+              className="px-4 py-2.5 rounded-xl bg-white text-zinc-950 font-semibold text-xs flex items-center gap-1 hover:bg-zinc-200 transition-colors shadow-sm"
             >
               Checkout <ChevronRight className="w-4 h-4" />
             </button>

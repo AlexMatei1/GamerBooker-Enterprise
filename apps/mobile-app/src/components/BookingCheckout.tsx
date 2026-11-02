@@ -35,7 +35,7 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
   const handleApplyPromo = () => {
     if (promoCode.trim().toUpperCase() === 'ENTERPRISE10') {
       setAppliedDiscountPercent(10);
-      setPromoMessage('Promo code applied: 10% discount on online deposit!');
+      setPromoMessage('10% voucher discount applied to online deposit.');
     } else {
       setPromoMessage('Invalid voucher. Try ENTERPRISE10');
       setAppliedDiscountPercent(0);
@@ -65,167 +65,167 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
 
   return (
     <div className="space-y-4 pb-28">
-      {/* Top back button */}
+      {/* Top Header */}
       <div className="flex items-center gap-3">
         <button
           onClick={onBack}
-          className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-white"
+          className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.08] flex items-center justify-center text-zinc-400 hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-extrabold">Step 2 of 2</span>
-          <h1 className="text-xl font-black text-white">Review & Checkout</h1>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 block">Step 2 of 2</span>
+          <h1 className="text-xl font-bold tracking-tight text-white">Review & Settle</h1>
         </div>
       </div>
 
-      {/* Booking Summary Card */}
-      <div className="glass-card p-4 rounded-3xl border border-slate-800 space-y-3 shadow-xl">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      {/* Booking Summary Box */}
+      <div className="p-4 rounded-xl bg-zinc-900/90 border border-white/[0.08] space-y-3 shadow-xl">
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
           <div>
-            <div className="text-[11px] font-semibold text-slate-400">Reserved Rig</div>
-            <div className="text-base font-black text-white">{quote.stationName}</div>
+            <div className="text-[11px] text-zinc-400">Assigned Station</div>
+            <div className="text-base font-bold text-white">{quote.stationName}</div>
           </div>
           <div className="text-right">
-            <div className="text-[11px] font-semibold text-slate-400">Duration</div>
-            <div className="text-base font-mono font-bold text-cyan-300">{quote.durationHours} Hours</div>
+            <div className="text-[11px] text-zinc-400">Duration</div>
+            <div className="text-base font-mono font-semibold text-zinc-100">{quote.durationHours} Hours</div>
           </div>
         </div>
 
-        <div className="space-y-1.5 text-xs">
-          <div className="flex justify-between text-slate-300">
-            <span>Session Window:</span>
-            <span className="font-semibold text-white">{quote.startTime} &rarr; {quote.endTime}</span>
+        <div className="space-y-1 text-xs text-zinc-400">
+          <div className="flex justify-between">
+            <span>Window:</span>
+            <span className="text-zinc-200">{quote.startTime} &rarr; {quote.endTime}</span>
           </div>
-          <div className="flex justify-between text-slate-300">
+          <div className="flex justify-between">
             <span>Hourly Rate:</span>
-            <span className="font-mono">{(quote.ratePerHour / 100).toFixed(2)} RON/h</span>
+            <span className="font-mono text-zinc-200">{(quote.ratePerHour / 100).toFixed(2)} RON/h</span>
           </div>
-          <div className="flex justify-between text-slate-300">
-            <span>Total Arena Subtotal:</span>
-            <span className="font-mono">{(quote.totalAmount / 100).toFixed(2)} RON</span>
+          <div className="flex justify-between">
+            <span>Subtotal:</span>
+            <span className="font-mono text-zinc-200">{(quote.totalAmount / 100).toFixed(2)} RON</span>
           </div>
         </div>
 
         {/* Deposit Split Box */}
-        <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-cyan-500/40 space-y-2">
+        <div className="p-3 rounded-lg bg-black/60 border border-white/[0.06] space-y-1.5">
           <div className="flex justify-between items-center text-xs">
-            <span className="font-bold text-cyan-300 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-cyan-400" /> Online Deposit (30%):
+            <span className="font-medium text-zinc-300 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Online Deposit (30%):
             </span>
-            <span className="font-mono text-base font-black text-cyan-300">
+            <span className="font-mono text-sm font-bold text-white">
               {(finalDepositDue / 100).toFixed(2)} RON
             </span>
           </div>
-          <div className="flex justify-between items-center text-[11px] text-slate-400">
-            <span>Payable on-site at reception (70%):</span>
+          <div className="flex justify-between items-center text-[10px] text-zinc-500">
+            <span>Settled on-site at reception (70%):</span>
             <span className="font-mono">{(quote.remainingOnSite / 100).toFixed(2)} RON</span>
           </div>
         </div>
       </div>
 
       {/* Promo Code Input */}
-      <div className="glass-card p-3 rounded-2xl border border-slate-800 space-y-2">
+      <div className="p-2.5 rounded-xl bg-zinc-900/60 border border-white/[0.06] space-y-1.5">
         <div className="flex items-center gap-2">
-          <Tag className="w-3.5 h-3.5 text-cyan-400" />
+          <Tag className="w-3.5 h-3.5 text-zinc-400" />
           <input
             type="text"
             value={promoCode}
             onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-            placeholder="Promo Code (ENTERPRISE10)"
-            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white uppercase font-mono focus:outline-none focus:border-cyan-500"
+            placeholder="Voucher code (ENTERPRISE10)"
+            className="flex-1 bg-transparent px-1 text-xs text-zinc-200 uppercase font-mono placeholder-zinc-500 focus:outline-none"
           />
           <button
             onClick={handleApplyPromo}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors"
+            className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-medium text-zinc-200 transition-colors"
           >
             Apply
           </button>
         </div>
         {promoMessage && (
-          <div className="text-[11px] text-cyan-400 font-semibold">{promoMessage}</div>
+          <div className="text-[11px] text-emerald-400 font-medium pl-6">{promoMessage}</div>
         )}
       </div>
 
       {/* Payment Method Selector */}
-      <div className="space-y-2">
-        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Payment Method</span>
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium text-zinc-400 block">Payment Method</span>
         <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => setPaymentMethod('APPLE_PAY')}
-            className={`p-3 rounded-2xl border text-center transition-all ${
+            className={`p-2.5 rounded-xl border text-center transition-all ${
               paymentMethod === 'APPLE_PAY'
-                ? 'border-cyan-400 bg-cyan-950/20 text-white shadow-lg shadow-cyan-500/10'
-                : 'border-slate-800 bg-slate-900 text-slate-400'
+                ? 'border-white bg-zinc-800 text-white shadow-sm'
+                : 'border-white/[0.06] bg-zinc-900 text-zinc-400'
             }`}
           >
-            <Smartphone className="w-5 h-5 mx-auto mb-1 text-cyan-400" />
-            <span className="text-[11px] font-bold block">Apple Pay</span>
+            <Smartphone className="w-4 h-4 mx-auto mb-1 text-zinc-200" />
+            <span className="text-[11px] font-medium block">Apple Pay</span>
           </button>
 
           <button
             onClick={() => setPaymentMethod('CARD')}
-            className={`p-3 rounded-2xl border text-center transition-all ${
+            className={`p-2.5 rounded-xl border text-center transition-all ${
               paymentMethod === 'CARD'
-                ? 'border-cyan-400 bg-cyan-950/20 text-white shadow-lg shadow-cyan-500/10'
-                : 'border-slate-800 bg-slate-900 text-slate-400'
+                ? 'border-white bg-zinc-800 text-white shadow-sm'
+                : 'border-white/[0.06] bg-zinc-900 text-zinc-400'
             }`}
           >
-            <CreditCard className="w-5 h-5 mx-auto mb-1 text-purple-400" />
-            <span className="text-[11px] font-bold block">Credit Card</span>
+            <CreditCard className="w-4 h-4 mx-auto mb-1 text-zinc-200" />
+            <span className="text-[11px] font-medium block">Credit Card</span>
           </button>
 
           <button
             onClick={() => setPaymentMethod('WALLET')}
-            className={`p-3 rounded-2xl border text-center transition-all ${
+            className={`p-2.5 rounded-xl border text-center transition-all ${
               paymentMethod === 'WALLET'
-                ? 'border-cyan-400 bg-cyan-950/20 text-white shadow-lg shadow-cyan-500/10'
-                : 'border-slate-800 bg-slate-900 text-slate-400'
+                ? 'border-white bg-zinc-800 text-white shadow-sm'
+                : 'border-white/[0.06] bg-zinc-900 text-zinc-400'
             }`}
           >
-            <Wallet className="w-5 h-5 mx-auto mb-1 text-emerald-400" />
-            <span className="text-[11px] font-bold block">Arena Coins</span>
+            <Wallet className="w-4 h-4 mx-auto mb-1 text-zinc-200" />
+            <span className="text-[11px] font-medium block">Arena Coins</span>
           </button>
         </div>
       </div>
 
-      {/* Romanian Statutory Cancellation Accordion */}
-      <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 text-[11px] space-y-1 text-slate-400">
-        <div className="font-bold text-slate-300 flex items-center gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5 text-amber-400" /> Romanian Cancellation Standard (OG 34/2014)
+      {/* Romanian Terms */}
+      <div className="p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] text-[11px] space-y-1 text-zinc-400">
+        <div className="font-medium text-zinc-300 flex items-center gap-1.5">
+          <AlertCircle className="w-3 h-3 text-zinc-400" /> Romanian Cancellation Standard (OG 34/2014)
         </div>
         <p>&bull; 100% refund if cancelled &gt; 2h before session.</p>
         <p>&bull; 50% arena credit voucher if cancelled within 30m - 2h.</p>
       </div>
 
-      {/* Terms Checkbox */}
-      <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300 select-none">
+      {/* Checkbox */}
+      <label className="flex items-start gap-2 cursor-pointer text-xs text-zinc-400 select-none">
         <input
           type="checkbox"
           checked={agreedTerms}
           onChange={(e) => setAgreedTerms(e.target.checked)}
-          className="mt-0.5 rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
+          className="mt-0.5 rounded border-zinc-700 text-white bg-zinc-900"
         />
-        <span>
-          I agree to the arena policies and confirm my age satisfies Romanian Law 42/2024 for venue admission.
+        <span className="text-[11px]">
+          I agree to venue policies and confirm my age satisfies Romanian Law 42/2024 for venue admission.
         </span>
       </label>
 
-      {/* Final Action Button */}
-      <div className="pt-2">
+      {/* Pay Button */}
+      <div className="pt-1">
         <button
           onClick={handlePay}
           disabled={!agreedTerms || isProcessing}
-          className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-2xl shadow-cyan-500/30 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
+          className="w-full py-3.5 rounded-xl bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-200 active:scale-[0.98] transition-all disabled:opacity-40 shadow-sm"
         >
           {isProcessing ? (
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-              <span>Securing Seat & Authorizing...</span>
+              <div className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+              <span>Authorizing with Bank...</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4" />
+            <div className="flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" />
               <span>
                 {paymentMethod === 'APPLE_PAY' ? ' Pay' : 'Pay'}{' '}
                 {(finalDepositDue / 100).toFixed(2)} RON &bull; Lock Seat

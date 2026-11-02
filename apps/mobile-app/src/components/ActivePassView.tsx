@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   QrCode,
-  Clock,
-  ShieldCheck,
   RefreshCw,
   PlusCircle,
   BellRing,
   CheckCircle2,
+  MapPin,
 } from 'lucide-react';
 import type { ActivePass } from '../types/mobile';
 
@@ -46,107 +45,115 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
   return (
     <div className="space-y-4 pb-28">
       {/* Top Header */}
-      <div className="text-center">
-        <span className="px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 inline-flex items-center gap-1.5 shadow-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-          SESSION ACTIVE &bull; TURNSTILE PASS
+      <div>
+        <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 block">
+          Arena Admission
         </span>
-        <h1 className="text-2xl font-black text-white mt-1.5">{pass.stationName}</h1>
-        <p className="text-xs text-slate-400">{pass.venueName}</p>
+        <h1 className="text-2xl font-bold tracking-tight text-white mt-0.5">Boarding Pass</h1>
       </div>
 
-      {/* Cyberpunk Holographic Digital Boarding Pass */}
-      <div className="glass-card rounded-3xl border border-cyan-500/40 overflow-hidden shadow-2xl relative bg-slate-950/90">
-        {/* Glowing top line */}
-        <div className="h-1.5 bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-600 animate-pulse" />
+      {/* Apple Wallet Style Digital Ticket Pass */}
+      <div className="rounded-2xl border border-white/[0.1] bg-[#121215] overflow-hidden shadow-2xl relative">
+        {/* Pass Top Bar */}
+        <div className="p-4 bg-zinc-900/90 border-b border-white/[0.06] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-white text-zinc-950 flex items-center justify-center font-bold text-xs">
+              GB
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-white">{pass.venueName}</div>
+              <div className="text-[10px] text-zinc-400 flex items-center gap-1">
+                <MapPin className="w-2.5 h-2.5" /> Turnstile Gate 1 &bull; {pass.zoneName}
+              </div>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            ACTIVE
+          </span>
+        </div>
 
-        <div className="p-5 text-center space-y-4">
-          {/* Animated Countdown Clock */}
-          <div className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800">
-            <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold flex items-center justify-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" /> Time Left in Session
-            </div>
-            <div className="text-4xl font-black font-mono tracking-tight text-cyan-300 mt-1">
-              {formatTime(secondsRemaining)}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1 font-mono">
-              Session window ends at {pass.endTime}
+        {/* Station Headline & Countdown Timer */}
+        <div className="p-5 text-center space-y-3">
+          <div>
+            <span className="text-[11px] text-zinc-400 uppercase tracking-wider block">Assigned Workstation</span>
+            <div className="text-3xl font-extrabold tracking-tight text-white mt-0.5 font-mono">
+              {pass.stationName}
             </div>
           </div>
 
-          {/* Rolling HMAC QR Code with Animated Scanning Laser */}
-          <div className="bg-white p-4 rounded-2xl inline-block shadow-inner mx-auto relative overflow-hidden group">
-            {/* Animated Laser Beam */}
-            <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-lg shadow-red-500/80 animate-bounce top-1/2 z-10" />
+          <div className="p-3.5 rounded-xl bg-black/60 border border-white/[0.06] max-w-xs mx-auto">
+            <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+              Session Remaining
+            </div>
+            <div className="text-2xl font-mono font-bold tracking-tight text-white mt-0.5 tabular-nums">
+              {formatTime(secondsRemaining)}
+            </div>
+            <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+              Ends at {pass.endTime}
+            </div>
+          </div>
 
-            <div className="w-48 h-48 bg-slate-950 rounded-xl flex flex-col items-center justify-center p-3 text-center relative overflow-hidden">
-              <QrCode className="w-36 h-36 text-cyan-400" />
-              <div className="absolute bottom-1 bg-slate-900/90 px-2 py-0.5 rounded text-[9px] font-mono font-bold text-cyan-300 border border-cyan-800/40">
+          {/* Perforated Divider with Notch Cutouts */}
+          <div className="relative my-4">
+            <div className="absolute -left-7 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-black border border-white/[0.1]" />
+            <div className="border-t border-dashed border-zinc-700/80 w-full" />
+            <div className="absolute -right-7 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-black border border-white/[0.1]" />
+          </div>
+
+          {/* Dynamic Rolling QR Code */}
+          <div className="bg-white p-4 rounded-xl inline-block shadow-inner mx-auto">
+            <div className="w-44 h-44 bg-zinc-950 rounded-lg flex flex-col items-center justify-center p-2 relative">
+              <QrCode className="w-36 h-36 text-white" />
+              <div className="absolute bottom-1 bg-zinc-900 px-2 py-0.5 rounded text-[9px] font-mono text-zinc-300 border border-white/[0.1]">
                 {pass.hmacToken}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
-            <RefreshCw className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-            <span>
-              Dynamic Token Refreshes in <strong className="text-white font-mono">{tokenCounter}s</strong>
+          <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500">
+            <RefreshCw className="w-3 h-3 text-zinc-400 animate-spin" />
+            <span className="text-[11px]">
+              Anti-screenshot pass refreshes in <strong className="text-zinc-300 font-mono">{tokenCounter}s</strong>
             </span>
           </div>
 
-          {/* Ticket Details Grid */}
-          <div className="grid grid-cols-2 gap-3 text-left pt-3 border-t border-slate-800 text-xs font-mono">
+          {/* Booking Meta Details */}
+          <div className="grid grid-cols-2 gap-2 text-left pt-3 border-t border-white/[0.06] text-xs font-mono">
             <div>
-              <span className="text-slate-500 text-[10px]">BOOKING REF</span>
-              <div className="font-bold text-white text-xs">{pass.bookingId}</div>
+              <span className="text-zinc-500 text-[10px] block">BOOKING REF</span>
+              <span className="font-medium text-white">{pass.bookingId}</span>
             </div>
             <div>
-              <span className="text-slate-500 text-[10px]">ZONE / ARENA</span>
-              <div className="font-bold text-cyan-300 text-xs">{pass.zoneName}</div>
-            </div>
-            <div>
-              <span className="text-slate-500 text-[10px]">DEPOSIT PAID</span>
-              <div className="font-bold text-emerald-400 text-xs">{pass.depositPaidRon} RON</div>
-            </div>
-            <div>
-              <span className="text-slate-500 text-[10px]">TOTAL VALUE</span>
-              <div className="font-bold text-white text-xs">{pass.totalRon} RON</div>
+              <span className="text-zinc-500 text-[10px] block">TOTAL VALUE</span>
+              <span className="font-medium text-white">{pass.totalRon} RON</span>
             </div>
           </div>
-        </div>
-
-        {/* Turnstile pass notice */}
-        <div className="bg-slate-900 px-5 py-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-cyan-300 font-medium">
-            <ShieldCheck className="w-3.5 h-3.5" /> Turnstile Validated &bull; Turnstile Gate 1
-          </span>
-          <span className="font-mono text-slate-500">ACTIVE</span>
         </div>
       </div>
 
       {staffCalled && (
-        <div className="p-3 rounded-2xl bg-cyan-950/80 border border-cyan-500 text-cyan-200 text-xs flex items-center gap-2 font-semibold">
-          <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-          <span>Reception desk alerted. Floor staff will arrive at {pass.stationName} shortly.</span>
+        <div className="p-3 rounded-xl bg-zinc-900 border border-white/[0.1] text-xs flex items-center gap-2 text-zinc-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>Floor staff notified for {pass.stationName}.</span>
         </div>
       )}
 
-      {/* Session Quick Actions */}
+      {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={onExtendSession}
-          className="py-3 px-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-cyan-500/30 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+          className="py-2.5 px-3 rounded-xl bg-white text-zinc-950 font-medium text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-200 transition-colors shadow-sm"
         >
-          <PlusCircle className="w-4 h-4" />
-          Extend +1 Hour
+          <PlusCircle className="w-3.5 h-3.5" />
+          <span>Extend (+1h)</span>
         </button>
 
         <button
           onClick={handleCallStaff}
-          className="py-3 px-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+          className="py-2.5 px-3 rounded-xl bg-zinc-900 border border-white/[0.08] text-zinc-300 font-medium text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-800 transition-colors"
         >
-          <BellRing className="w-4 h-4 text-amber-400" />
-          Call Floor Staff
+          <BellRing className="w-3.5 h-3.5 text-zinc-400" />
+          <span>Call Staff</span>
         </button>
       </div>
     </div>

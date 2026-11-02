@@ -2,19 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-/* GamerBooker Enterprise Design System */
+/* GamerBooker Enterprise Design System — Linear / Vercel Grade */
 :root {
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  --bg-primary: #030712;
-  --bg-secondary: #0b132b;
-  --bg-card: rgba(17, 24, 39, 0.75);
-  --border-card: rgba(30, 41, 59, 0.8);
-  --accent-cyan: #00f0ff;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --accent-purple: #8b5cf6;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  
+  --bg-app: #09090b;
+  --bg-subtle: #0c0c0e;
+  --bg-surface: #121215;
+  --bg-elevated: #18181c;
+  --bg-overlay: #1e1e24;
+  
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-muted: rgba(255, 255, 255, 0.12);
+  --border-active: rgba(255, 255, 255, 0.22);
+  
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  
+  --accent: #6366f1;
+  --accent-subtle: rgba(99, 102, 241, 0.12);
+  --emerald: #10b981;
+  --amber: #f59e0b;
+  --rose: #f43f5e;
 }
 
 * {
@@ -25,126 +36,144 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--bg-primary);
-  color: #f1f5f9;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
   line-height: 1.5;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
 }
 
 code, pre, .font-mono {
   font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'zero' 1;
 }
 
-/* Glassmorphism Cards */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.5);
+/* Linear-grade Panels */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
 }
 
-.glass-panel-glow {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  box-shadow: 0 0 25px rgba(0, 240, 255, 0.08);
+.panel-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-muted);
   border-radius: 0.75rem;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.panel-subtle {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
 }
 
 /* Button & Interactive */
 .btn-primary {
-  background: linear-gradient(135deg, #00f0ff 0%, #0284c7 100%);
-  color: #030712;
-  font-weight: 700;
-  padding: 0.625rem 1.25rem;
+  background: #ffffff;
+  color: #09090b;
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.85rem;
   border-radius: 0.5rem;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.9);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  transition: all 0.15s ease-in-out;
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+  gap: 0.4rem;
+  transition: all 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 22px rgba(0, 240, 255, 0.5);
+  background: #f4f4f5;
+  border-color: #ffffff;
+  transform: translateY(-0.5px);
 }
 
 .btn-secondary {
-  background: rgba(30, 41, 59, 0.8);
-  color: #e2e8f0;
-  font-weight: 600;
-  padding: 0.625rem 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e4e4e7;
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.85rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(71, 85, 105, 0.5);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  transition: all 0.15s ease-in-out;
+  gap: 0.4rem;
+  transition: all 0.12s ease;
 }
 
 .btn-secondary:hover {
-  background: rgba(51, 65, 85, 0.9);
-  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-muted);
+  color: #ffffff;
 }
 
 .btn-danger {
-  background: rgba(225, 29, 72, 0.2);
+  background: rgba(244, 63, 94, 0.1);
   color: #fb7185;
-  border: 1px solid rgba(225, 29, 72, 0.4);
-  font-weight: 600;
-  padding: 0.5rem 1rem;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 0.5rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
 }
 
 .btn-danger:hover {
-  background: rgba(225, 29, 72, 0.35);
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.4);
 }
 
-/* Status Badges */
-.badge-available {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+/* Status Dots */
+.status-dot-emerald {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
 }
 
-.badge-occupied {
-  background: rgba(0, 240, 255, 0.15);
-  color: #38bdf8;
-  border: 1px solid rgba(0, 240, 255, 0.3);
+.status-dot-cyan {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
 }
 
-.badge-booked {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+.status-dot-amber {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #f59e0b;
 }
 
-.badge-maintenance {
-  background: rgba(244, 63, 94, 0.15);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.3);
+.status-dot-rose {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #f43f5e;
 }
 
-/* Custom Scrollbars */
+/* Minimal Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #030712;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
+  background: #27272a;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #3f3f46;
 }

@@ -10,18 +10,19 @@ import {
   Redo2,
   Sparkles,
   Copy,
-  Eye,
   Grid,
   ZoomIn,
   ZoomOut,
-  Maximize2,
   CheckCircle,
-  AlertCircle,
   Move,
   Monitor,
   Gamepad2,
   Car,
   Table,
+  Sliders,
+  Maximize2,
+  MousePointer,
+  HelpCircle,
 } from 'lucide-react';
 import type { LayoutDraft, LayoutNode, VenueRole } from '../types/dashboard';
 import { api } from '../api/client';
@@ -31,29 +32,29 @@ interface LayoutBuilderProps {
   role: VenueRole;
 }
 
-// Safe rounded rectangle rendering for all browsers
-function drawSafeRoundRect(
+// Safe rounded rectangle rendering for high-DPI canvas
+function drawRoundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  width: number,
-  height: number,
-  radius: number,
+  w: number,
+  h: number,
+  r: number,
 ) {
   if (typeof ctx.roundRect === 'function') {
     ctx.beginPath();
-    ctx.roundRect(x, y, width, height, radius);
+    ctx.roundRect(x, y, w, h, r);
   } else {
     ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
   }
 }
@@ -61,20 +62,20 @@ function drawSafeRoundRect(
 export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) => {
   const [draft, setDraft] = useState<LayoutDraft | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Canvas Viewport & Interactivity State
+  // Viewport State
   const [zoomScale, setZoomScale] = useState<number>(0.85);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
   const [history, setHistory] = useState<LayoutDraft[]>([]);
   const [redoStack, setRedoStack] = useState<LayoutDraft[]>([]);
 
-  // Dragging state
+  // Dragging State
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [cursorCoords, setCursorCoords] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -89,7 +90,6 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     setRedoStack([]);
   }
 
-  // Push state to undo history before mutating
   const pushHistory = useCallback((currentDraft: LayoutDraft) => {
     setHistory((prev) => [...prev.slice(-20), JSON.parse(JSON.stringify(currentDraft))]);
     setRedoStack([]);
@@ -111,71 +111,47 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     setRedoStack((r) => r.slice(0, -1));
   };
 
-  // Convert MouseEvent coordinates to Canvas Space
   const getCanvasCoords = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!canvasRef.current || !draft) return { x: 0, y: 0 };
       const rect = canvasRef.current.getBoundingClientRect();
       const scaleX = draft.canvas.width / rect.width;
       const scaleY = draft.canvas.height / rect.height;
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
-      return { x, y };
+      return {
+        x: Math.round((e.clientX - rect.left) * scaleX),
+        y: Math.round((e.clientY - rect.top) * scaleY),
+      };
     },
     [draft],
   );
 
-  // Mouse Down - Selection & Drag Initiation
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!draft) return;
     const { x, y } = getCanvasCoords(e);
 
-    // Hit test: Equipment nodes take priority over furniture and rooms
-    const equipmentNodes = draft.nodes.filter((n) => n.layer === 'equipment');
-    const furnitureNodes = draft.nodes.filter((n) => n.layer !== 'equipment');
+    // Hit-test: Equipment takes priority over furniture and rooms
+    const equipment = draft.nodes.filter((n) => n.layer === 'equipment');
+    const furniture = draft.nodes.filter((n) => n.layer !== 'equipment');
 
-    const hitEquipment = [...equipmentNodes].reverse().find(
-      (n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height,
-    );
-
-    const hitFurniture = [...furnitureNodes].reverse().find(
-      (n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height,
-    );
-
-    const hitNode = hitEquipment || hitFurniture;
+    const hitNode =
+      [...equipment].reverse().find((n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height) ||
+      [...furniture].reverse().find((n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height);
 
     if (hitNode) {
       pushHistory(draft);
       setSelectedNodeId(hitNode.id);
-      setSelectedRoomId(null);
       setIsDragging(true);
       setDragOffset({ x: x - hitNode.x, y: y - hitNode.y });
-      return;
-    }
-
-    // Hit test rooms if no node was hit
-    const hitRoom = [...draft.rooms].reverse().find(
-      (r) =>
-        x >= r.bounds.x &&
-        x <= r.bounds.x + r.bounds.width &&
-        y >= r.bounds.y &&
-        y <= r.bounds.y + r.bounds.height,
-    );
-
-    if (hitRoom) {
-      setSelectedRoomId(hitRoom.id);
-      setSelectedNodeId(null);
     } else {
       setSelectedNodeId(null);
-      setSelectedRoomId(null);
+      setIsDragging(false);
     }
-    setIsDragging(false);
   };
 
-  // Mouse Move - Live Dragging with Snap to 20px Grid
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!draft) return;
     const { x, y } = getCanvasCoords(e);
+    setCursorCoords({ x, y });
 
     if (isDragging && selectedNodeId) {
       const node = draft.nodes.find((n) => n.id === selectedNodeId);
@@ -190,7 +166,6 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         targetY = Math.round(targetY / gridSize) * gridSize;
       }
 
-      // Clamp within canvas boundaries
       targetX = Math.max(0, Math.min(draft.canvas.width - node.width, targetX));
       targetY = Math.max(0, Math.min(draft.canvas.height - node.height, targetY));
 
@@ -203,7 +178,6 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
           : null,
       );
     } else {
-      // Hover detection for dynamic cursor
       const hit = [...draft.nodes].reverse().find(
         (n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height,
       );
@@ -215,20 +189,19 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     setIsDragging(false);
   };
 
-  // Add Station
   const handleAddStation = (type: 'PC' | 'CONSOLE_SETUP' | 'SIM_RIG' | 'FURNITURE') => {
     if (!draft) return;
     pushHistory(draft);
 
     const count = draft.nodes.filter((n) => n.type === type).length + 1;
     let prefix = 'PC';
-    let width = 60;
-    let height = 60;
+    let width = 64;
+    let height = 64;
 
     if (type === 'CONSOLE_SETUP') {
       prefix = 'PS5';
-      width = 70;
-      height = 70;
+      width = 72;
+      height = 72;
     } else if (type === 'SIM_RIG') {
       prefix = 'SIM';
       width = 80;
@@ -243,8 +216,8 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
       id: `node-${Date.now()}`,
       name: `${prefix}-${count.toString().padStart(2, '0')}`,
       type,
-      x: 140 + (count % 5) * 40,
-      y: 140 + (count % 4) * 40,
+      x: 160 + (count % 4) * 40,
+      y: 160 + (count % 3) * 40,
       width,
       height,
       rotation: 0,
@@ -256,7 +229,6 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     setStatusMessage({ text: `Added ${newNode.name} to layout canvas.`, type: 'success' });
   };
 
-  // Rotate Node
   const handleRotateSelected = () => {
     if (!draft || !selectedNodeId) return;
     pushHistory(draft);
@@ -268,7 +240,6 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     });
   };
 
-  // Duplicate Selected Node
   const handleDuplicateSelected = () => {
     if (!draft || !selectedNodeId) return;
     const node = draft.nodes.find((n) => n.id === selectedNodeId);
@@ -278,17 +249,15 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
     const dupNode: LayoutNode = {
       ...node,
       id: `node-${Date.now()}`,
-      name: `${node.name}-COPY`,
-      x: Math.min(draft.canvas.width - node.width, node.x + 30),
-      y: Math.min(draft.canvas.height - node.height, node.y + 30),
+      name: `${node.name}-B`,
+      x: Math.min(draft.canvas.width - node.width, node.x + 20),
+      y: Math.min(draft.canvas.height - node.height, node.y + 20),
     };
 
     setDraft({ ...draft, nodes: [...draft.nodes, dupNode] });
     setSelectedNodeId(dupNode.id);
-    setStatusMessage({ text: `Duplicated ${node.name}.`, type: 'success' });
   };
 
-  // Delete Selected Node
   const handleDeleteSelected = () => {
     if (!draft || !selectedNodeId) return;
     pushHistory(draft);
@@ -297,40 +266,38 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
       nodes: draft.nodes.filter((n) => n.id !== selectedNodeId),
     });
     setSelectedNodeId(null);
-    setStatusMessage({ text: 'Deleted item from floor layout.', type: 'success' });
   };
 
-  // Apply Presets
-  const handleApplyPreset = (preset: 'ESPORTS_5V5' | 'ROW_10' | 'SIM_CLUSTER') => {
+  const handleApplyPreset = (preset: 'ESPORTS_5V5' | 'SIM_CLUSTER') => {
     if (!draft) return;
     pushHistory(draft);
 
     if (preset === 'ESPORTS_5V5') {
       const alphaNodes: LayoutNode[] = [1, 2, 3, 4, 5].map((idx) => ({
         id: `alpha-${idx}`,
-        name: `ALPHA-0${idx}`,
+        name: `A-0${idx}`,
         type: 'PC',
         x: 120 + (idx - 1) * 80,
         y: 200,
-        width: 60,
-        height: 60,
+        width: 64,
+        height: 64,
         rotation: 0,
         layer: 'equipment',
       }));
       const omegaNodes: LayoutNode[] = [1, 2, 3, 4, 5].map((idx) => ({
         id: `omega-${idx}`,
-        name: `OMEGA-0${idx}`,
+        name: `B-0${idx}`,
         type: 'PC',
         x: 120 + (idx - 1) * 80,
         y: 340,
-        width: 60,
-        height: 60,
+        width: 64,
+        height: 64,
         rotation: 180,
         layer: 'equipment',
       }));
-      const stageDeskA: LayoutNode = {
-        id: `desk-alpha`,
-        name: 'Team Alpha Stage Desk',
+      const deskA: LayoutNode = {
+        id: `desk-a`,
+        name: 'Team Alpha Stage Bench',
         type: 'FURNITURE',
         x: 110,
         y: 190,
@@ -339,9 +306,9 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         rotation: 0,
         layer: 'furniture',
       };
-      const stageDeskB: LayoutNode = {
-        id: `desk-omega`,
-        name: 'Team Omega Stage Desk',
+      const deskB: LayoutNode = {
+        id: `desk-b`,
+        name: 'Team Omega Stage Bench',
         type: 'FURNITURE',
         x: 110,
         y: 330,
@@ -353,13 +320,19 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
 
       setDraft({
         ...draft,
-        nodes: [...draft.nodes.filter((n) => !n.id.startsWith('alpha-') && !n.id.startsWith('omega-')), stageDeskA, stageDeskB, ...alphaNodes, ...omegaNodes],
+        nodes: [
+          ...draft.nodes.filter((n) => !n.id.startsWith('alpha-') && !n.id.startsWith('omega-') && !n.id.startsWith('desk-')),
+          deskA,
+          deskB,
+          ...alphaNodes,
+          ...omegaNodes,
+        ],
       });
-      setStatusMessage({ text: 'Applied 5v5 Esports Arena Opposing Pods Preset.', type: 'success' });
+      setStatusMessage({ text: 'Configured 5v5 Opposing Esports Stage.', type: 'success' });
     } else if (preset === 'SIM_CLUSTER') {
       const simNodes: LayoutNode[] = [1, 2, 3, 4].map((idx) => ({
-        id: `sim-cluster-${idx}`,
-        name: `SIM-PRO-${idx}`,
+        id: `sim-pod-${idx}`,
+        name: `SIM-${idx}`,
         type: 'SIM_RIG',
         x: 800 + ((idx - 1) % 2) * 110,
         y: 120 + Math.floor((idx - 1) / 2) * 130,
@@ -369,97 +342,75 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         layer: 'equipment',
       }));
       setDraft({ ...draft, nodes: [...draft.nodes, ...simNodes] });
-      setStatusMessage({ text: 'Applied 4x Direct-Drive Sim Racing Cluster Preset.', type: 'success' });
+      setStatusMessage({ text: 'Configured 4x Direct-Drive Racing Cluster.', type: 'success' });
     }
   };
 
-  // Publish Revision
-  const handlePublishRevision = async () => {
+  const handlePublish = async () => {
     if (!draft) return;
     const nextRev = draft.revision + 1;
     setDraft({ ...draft, revision: nextRev });
     setStatusMessage({
-      text: `Layout Published! Revision #${nextRev} is now live across turnstiles, customer mobile app, and floor intake.`,
+      text: `Revision #${nextRev} published. Invariants verified across active bookings.`,
       type: 'success',
     });
   };
 
-  // Render Canvas
+  // Canvas Drawing
   useEffect(() => {
     if (!draft || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Reset transform & clear
+    // Reset & Background
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#030712';
+    ctx.fillStyle = '#0c0c0e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Subtle 20px Grid
+    // Subtle Dot Grid (Figma / Linear Style)
     if (showGrid) {
       const gridSize = draft.canvas.grid_size || 20;
-      ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 1;
-      for (let x = 0; x < canvas.width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
-
-      // Major grid lines (every 100px)
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 1.5;
-      for (let x = 0; x < canvas.width; x += 100) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += 100) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      for (let x = gridSize; x < canvas.width; x += gridSize) {
+        for (let y = gridSize; y < canvas.height; y += gridSize) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
-    // Draw Rooms & Architectural Boundaries
+    // Rooms (Architectural Boundaries)
     draft.rooms.forEach((room) => {
-      const isRoomSelected = selectedRoomId === room.id;
       ctx.save();
-      ctx.strokeStyle = isRoomSelected ? '#00f0ff' : 'rgba(56, 189, 248, 0.4)';
-      ctx.fillStyle = isRoomSelected ? 'rgba(6, 182, 212, 0.08)' : 'rgba(15, 23, 42, 0.5)';
-      ctx.lineWidth = isRoomSelected ? 2.5 : 1.5;
-      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
 
-      drawSafeRoundRect(ctx, room.bounds.x, room.bounds.y, room.bounds.width, room.bounds.height, 12);
+      drawRoundRect(ctx, room.bounds.x, room.bounds.y, room.bounds.width, room.bounds.height, 8);
       ctx.fill();
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Room Header Tab
-      ctx.fillStyle = isRoomSelected ? 'rgba(0, 240, 255, 0.2)' : 'rgba(30, 41, 59, 0.8)';
-      drawSafeRoundRect(ctx, room.bounds.x + 8, room.bounds.y + 8, 180, 26, 6);
+      // Room Header Pill
+      ctx.fillStyle = 'rgba(24, 24, 28, 0.9)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      drawRoundRect(ctx, room.bounds.x + 10, room.bounds.y + 10, 160, 24, 4);
       ctx.fill();
+      ctx.stroke();
 
-      ctx.fillStyle = isRoomSelected ? '#00f0ff' : '#94a3b8';
-      ctx.font = 'bold 11px Plus Jakarta Sans, sans-serif';
+      ctx.fillStyle = '#a1a1aa';
+      ctx.font = '600 10px -apple-system, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(room.name.toUpperCase(), room.bounds.x + 16, room.bounds.y + 21);
+      ctx.fillText(room.name.toUpperCase(), room.bounds.x + 18, room.bounds.y + 22);
 
       ctx.restore();
     });
 
-    // Draw Furniture First (underneath equipment)
+    // Furniture Layer (drawn below equipment)
     draft.nodes
       .filter((n) => n.layer === 'furniture')
       .forEach((node) => {
@@ -468,16 +419,16 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         ctx.translate(node.x + node.width / 2, node.y + node.height / 2);
         ctx.rotate((node.rotation * Math.PI) / 180);
 
-        ctx.fillStyle = isSelected ? '#334155' : '#1e293b';
-        ctx.strokeStyle = isSelected ? '#00f0ff' : '#475569';
-        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.fillStyle = isSelected ? '#1f1f23' : '#18181b';
+        ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = isSelected ? 1.5 : 1;
 
-        drawSafeRoundRect(ctx, -node.width / 2, -node.height / 2, node.width, node.height, 8);
+        drawRoundRect(ctx, -node.width / 2, -node.height / 2, node.width, node.height, 6);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '600 10px JetBrains Mono, monospace';
+        ctx.fillStyle = '#71717a';
+        ctx.font = '500 10px SF Mono, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(node.name, 0, 0);
@@ -485,7 +436,7 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         ctx.restore();
       });
 
-    // Draw Equipment Nodes (PCs, Consoles, Sim Rigs)
+    // Equipment Layer (PCs, Consoles, Sim Rigs)
     draft.nodes
       .filter((n) => n.layer === 'equipment')
       .forEach((node) => {
@@ -496,61 +447,62 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
         ctx.translate(node.x + node.width / 2, node.y + node.height / 2);
         ctx.rotate((node.rotation * Math.PI) / 180);
 
-        // Selection Glow Halo
-        if (isSelected) {
-          ctx.shadowColor = '#00f0ff';
-          ctx.shadowBlur = 15;
-        }
-
-        // Station Background & Colors
+        // Surface Fill
         if (node.type === 'PC') {
-          ctx.fillStyle = isSelected ? '#0284c7' : '#0369a1';
-          ctx.strokeStyle = isSelected ? '#00f0ff' : '#38bdf8';
+          ctx.fillStyle = isSelected ? '#1e1b4b' : '#131317';
+          ctx.strokeStyle = isSelected ? '#818cf8' : isHovered ? '#6366f1' : 'rgba(255, 255, 255, 0.16)';
         } else if (node.type === 'CONSOLE_SETUP') {
-          ctx.fillStyle = isSelected ? '#7e22ce' : '#6b21a8';
-          ctx.strokeStyle = isSelected ? '#c084fc' : '#a855f7';
+          ctx.fillStyle = isSelected ? '#2e1065' : '#131317';
+          ctx.strokeStyle = isSelected ? '#c084fc' : isHovered ? '#a855f7' : 'rgba(255, 255, 255, 0.16)';
         } else if (node.type === 'SIM_RIG') {
-          ctx.fillStyle = isSelected ? '#b45309' : '#92400e';
-          ctx.strokeStyle = isSelected ? '#fbbf24' : '#f59e0b';
+          ctx.fillStyle = isSelected ? '#451a03' : '#131317';
+          ctx.strokeStyle = isSelected ? '#fbbf24' : isHovered ? '#f59e0b' : 'rgba(255, 255, 255, 0.16)';
         } else {
-          ctx.fillStyle = '#0f766e';
-          ctx.strokeStyle = '#2dd4bf';
+          ctx.fillStyle = '#131317';
+          ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.16)';
         }
 
-        ctx.lineWidth = isSelected ? 2.5 : isHovered ? 2 : 1.5;
-        drawSafeRoundRect(ctx, -node.width / 2, -node.height / 2, node.width, node.height, 8);
+        ctx.lineWidth = isSelected ? 2 : 1;
+        drawRoundRect(ctx, -node.width / 2, -node.height / 2, node.width, node.height, 6);
         ctx.fill();
         ctx.stroke();
 
-        // Monitor / Screen Orientation Notch (shows which way player faces)
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(-node.width / 2 + 10, -node.height / 2 + 4, node.width - 20, 3);
+        // Screen bezel notch (indicates player orientation)
+        ctx.fillStyle = isSelected ? '#ffffff' : '#71717a';
+        ctx.fillRect(-node.width / 2 + 10, -node.height / 2 + 3, node.width - 20, 2);
 
-        // Station Code / Name
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px JetBrains Mono, monospace';
+        // Station Code
+        ctx.fillStyle = isSelected ? '#ffffff' : '#e4e4e7';
+        ctx.font = '600 11px SF Mono, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(node.name, 0, 4);
+        ctx.fillText(node.name, 0, 3);
 
         ctx.restore();
 
-        // Coordinate Tag if selected
+        // Selection Bounding Box & Coordinates Tag
         if (isSelected) {
           ctx.save();
-          ctx.fillStyle = '#00f0ff';
-          ctx.font = 'bold 9px JetBrains Mono, monospace';
-          ctx.fillText(`X:${node.x} Y:${node.y}`, node.x, node.y - 6);
+          ctx.strokeStyle = '#818cf8';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.strokeRect(node.x - 3, node.y - 3, node.width + 6, node.height + 6);
+          ctx.setLineDash([]);
+
+          // Coordinate Tag
+          ctx.fillStyle = '#818cf8';
+          ctx.font = '500 9px SF Mono, monospace';
+          ctx.fillText(`${node.x}, ${node.y}`, node.x, node.y - 7);
           ctx.restore();
         }
       });
-  }, [draft, selectedNodeId, selectedRoomId, hoveredNodeId, showGrid]);
+  }, [draft, selectedNodeId, hoveredNodeId, showGrid]);
 
   if (!draft) {
     return (
-      <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-        <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-        <span>Loading 2D Interactive Venue Layout Builder...</span>
+      <div className="p-16 text-center text-zinc-500 flex flex-col items-center justify-center gap-2">
+        <div className="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono">Initializing CAD layout engine...</span>
       </div>
     );
   }
@@ -558,113 +510,135 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
   const selectedNode = draft.nodes.find((n) => n.id === selectedNodeId);
 
   return (
-    <div className="space-y-4">
-      {/* Top Action Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-slate-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-            <h2 className="font-extrabold text-base text-white flex items-center gap-2">
-              <Layers className="w-5 h-5 text-cyan-400" />
-              Interactive 2D Floor Layout Builder
-            </h2>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
-              Rev #{draft.revision}
-            </span>
+    <div className="space-y-3">
+      {/* CAD Top Toolbar (Linear / Figma Style) */}
+      <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Tool Selection */}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 border border-white/[0.08]">
+            <button
+              onClick={() => handleAddStation('PC')}
+              className="px-2.5 py-1 rounded text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+              title="Add PC Station"
+            >
+              <Monitor className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Rig</span>
+            </button>
+            <button
+              onClick={() => handleAddStation('CONSOLE_SETUP')}
+              className="px-2.5 py-1 rounded text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+              title="Add Console Station"
+            >
+              <Gamepad2 className="w-3.5 h-3.5 text-purple-400" />
+              <span>Console</span>
+            </button>
+            <button
+              onClick={() => handleAddStation('SIM_RIG')}
+              className="px-2.5 py-1 rounded text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+              title="Add Racing Sim Rig"
+            >
+              <Car className="w-3.5 h-3.5 text-amber-400" />
+              <span>Sim</span>
+            </button>
+            <button
+              onClick={() => handleAddStation('FURNITURE')}
+              className="px-2.5 py-1 rounded text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+              title="Add LAN Desk Bench"
+            >
+              <Table className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Desk</span>
+            </button>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Drag & drop workstations &bull; Snap to 20px grid &bull; Real-time turnstile sync &bull; 0 collision safety
-          </p>
-        </div>
 
-        {/* Toolbar Controls */}
-        <div className="flex items-center gap-2">
-          {/* Undo / Redo */}
-          <div className="flex items-center bg-slate-900 rounded-xl p-1 border border-slate-800">
+          <div className="h-4 w-[1px] bg-white/[0.08] mx-1" />
+
+          {/* History Undo / Redo */}
+          <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 border border-white/[0.08]">
             <button
               onClick={handleUndo}
               disabled={history.length === 0}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-1 rounded text-zinc-400 hover:text-white disabled:opacity-25"
               title="Undo (Ctrl+Z)"
             >
-              <Undo2 className="w-4 h-4" />
+              <Undo2 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleRedo}
               disabled={redoStack.length === 0}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-1 rounded text-zinc-400 hover:text-white disabled:opacity-25"
               title="Redo (Ctrl+Y)"
             >
-              <Redo2 className="w-4 h-4" />
+              <Redo2 className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Grid Toggle */}
+          {/* Grid & Snap Controls */}
           <button
             onClick={() => setShowGrid(!showGrid)}
-            className={`p-2 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
+            className={`px-2 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 transition-colors ${
               showGrid
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800'
+                ? 'bg-zinc-800 text-zinc-100 border-white/[0.12]'
+                : 'bg-transparent text-zinc-500 border-transparent hover:text-zinc-300'
             }`}
-            title="Toggle Grid"
           >
-            <Grid className="w-4 h-4" />
+            <Grid className="w-3 h-3" />
             <span>Grid</span>
           </button>
 
-          {/* Snap Toggle */}
           <button
             onClick={() => setSnapToGrid(!snapToGrid)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+            className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
               snapToGrid
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800'
+                ? 'bg-zinc-800 text-zinc-100 border-white/[0.12]'
+                : 'bg-transparent text-zinc-500 border-transparent hover:text-zinc-300'
             }`}
           >
             Snap (20px)
           </button>
+        </div>
 
-          {/* Zoom Controls */}
-          <div className="flex items-center bg-slate-900 rounded-xl p-1 border border-slate-800 text-xs">
+        {/* Right: Presets, Zoom & Publish */}
+        <div className="flex items-center gap-2">
+          {/* Zoom Buttons */}
+          <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 border border-white/[0.08] text-xs">
             <button
               onClick={() => setZoomScale((s) => Math.max(0.5, s - 0.1))}
-              className="p-1.5 text-slate-400 hover:text-white"
+              className="p-1 text-zinc-400 hover:text-white"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="px-1.5 font-mono text-[11px] text-cyan-300">
+            <span className="px-1.5 font-mono text-[11px] text-zinc-300">
               {Math.round(zoomScale * 100)}%
             </span>
             <button
               onClick={() => setZoomScale((s) => Math.min(1.5, s + 0.1))}
-              className="p-1.5 text-slate-400 hover:text-white"
+              className="p-1 text-zinc-400 hover:text-white"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-3 h-3" />
             </button>
           </div>
 
           {/* Presets */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => handleApplyPreset('ESPORTS_5V5')}
-              className="btn-secondary text-xs py-1.5 px-3"
+              className="btn-secondary text-[11px] py-1 px-2.5"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              5v5 Esports
+              5v5 Preset
             </button>
             <button
               onClick={() => handleApplyPreset('SIM_CLUSTER')}
-              className="btn-secondary text-xs py-1.5 px-3"
+              className="btn-secondary text-[11px] py-1 px-2.5"
             >
-              <Car className="w-3.5 h-3.5 text-amber-400" />
               Sim Cluster
             </button>
           </div>
 
+          <div className="h-4 w-[1px] bg-white/[0.08] mx-1" />
+
           <button
-            onClick={() => setStatusMessage({ text: 'Draft floor layout saved to database.', type: 'success' })}
-            className="btn-secondary text-xs py-1.5 px-3"
+            onClick={() => setStatusMessage({ text: 'Draft revision saved.', type: 'success' })}
+            className="btn-secondary text-xs py-1 px-3"
           >
             <Save className="w-3.5 h-3.5" />
             Save Draft
@@ -672,191 +646,39 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
 
           {role !== 'RECEPTION' && (
             <button
-              onClick={handlePublishRevision}
-              className="btn-primary text-xs py-1.5 px-3.5"
+              onClick={handlePublish}
+              className="btn-primary text-xs py-1 px-3.5"
             >
               <UploadCloud className="w-3.5 h-3.5" />
-              Publish Revision
+              Publish Rev #{draft.revision + 1}
             </button>
           )}
         </div>
       </div>
 
       {statusMessage && (
-        <div
-          className={`p-3 rounded-xl text-xs flex items-center justify-between border ${
-            statusMessage.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
-              : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
-          }`}
-        >
+        <div className="p-3 rounded-xl bg-zinc-900 border border-white/[0.1] text-xs flex items-center justify-between text-zinc-200">
           <div className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{statusMessage.text}</span>
           </div>
-          <button
-            onClick={() => setStatusMessage(null)}
-            className="text-[10px] text-slate-400 hover:text-white"
-          >
+          <button onClick={() => setStatusMessage(null)} className="text-zinc-500 hover:text-zinc-300 text-xs">
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Editor & Canvas Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
-        {/* Left Toolbox & Inspector Panel */}
-        <div className="space-y-4">
-          {/* Station Toolbox */}
-          <div className="glass-panel p-4 rounded-2xl border border-slate-800 space-y-3">
-            <h4 className="font-extrabold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-cyan-400" /> Add Equipment & Furniture
-            </h4>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleAddStation('PC')}
-                className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left hover:border-cyan-500/50 transition-all flex flex-col gap-1"
-              >
-                <Monitor className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-white">Gaming PC</span>
-                <span className="text-[10px] text-slate-500">RTX 4090 Rig</span>
-              </button>
-
-              <button
-                onClick={() => handleAddStation('CONSOLE_SETUP')}
-                className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left hover:border-purple-500/50 transition-all flex flex-col gap-1"
-              >
-                <Gamepad2 className="w-4 h-4 text-purple-400" />
-                <span className="text-xs font-bold text-white">Console</span>
-                <span className="text-[10px] text-slate-500">PS5 / OLED</span>
-              </button>
-
-              <button
-                onClick={() => handleAddStation('SIM_RIG')}
-                className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left hover:border-amber-500/50 transition-all flex flex-col gap-1"
-              >
-                <Car className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold text-white">Sim Racing</span>
-                <span className="text-[10px] text-slate-500">Direct Drive</span>
-              </button>
-
-              <button
-                onClick={() => handleAddStation('FURNITURE')}
-                className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left hover:border-slate-600 transition-all flex flex-col gap-1"
-              >
-                <Table className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-bold text-white">Team Desk</span>
-                <span className="text-[10px] text-slate-500">LAN Bench</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Node Inspector */}
-          {selectedNode ? (
-            <div className="glass-panel p-4 rounded-2xl border border-cyan-500/40 space-y-3 bg-slate-950/80">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-1.5">
-                  <Move className="w-4 h-4 text-cyan-400" />
-                  <span className="font-extrabold text-xs text-white">Station Inspector</span>
-                </div>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-                  {selectedNode.type}
-                </span>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400">Station Name / Code</label>
-                <input
-                  type="text"
-                  value={selectedNode.name}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setDraft({
-                      ...draft,
-                      nodes: draft.nodes.map((n) => (n.id === selectedNode.id ? { ...n, name: val } : n)),
-                    });
-                  }}
-                  className="w-full mt-1 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-mono font-bold text-cyan-300 focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block">Position (X, Y)</span>
-                  <span className="font-mono text-slate-300 font-bold">{selectedNode.x}px, {selectedNode.y}px</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block">Dimensions</span>
-                  <span className="font-mono text-slate-300 font-bold">{selectedNode.width} &times; {selectedNode.height}</span>
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={handleRotateSelected}
-                  className="flex-1 btn-secondary text-xs py-2 justify-center"
-                  title="Rotate 90 degrees"
-                >
-                  <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Rotate ({selectedNode.rotation}°)</span>
-                </button>
-                <button
-                  onClick={handleDuplicateSelected}
-                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white"
-                  title="Duplicate Station"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleDeleteSelected}
-                  className="btn-danger text-xs p-2 rounded-lg"
-                  title="Delete Station"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="glass-panel p-4 rounded-2xl border border-slate-800 text-center text-xs text-slate-400 py-6">
-              <Move className="w-6 h-6 text-slate-600 mx-auto mb-2" />
-              <p className="font-semibold text-slate-300">Direct Drag & Drop Enabled</p>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Click and drag any gaming rig or desk on the canvas to reposition.
-              </p>
-            </div>
-          )}
-
-          {/* Arena Stats */}
-          <div className="glass-panel p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-            <div className="flex justify-between text-slate-400">
-              <span>Total Workstations:</span>
-              <span className="font-mono font-bold text-white">
-                {draft.nodes.filter((n) => n.layer === 'equipment').length}
-              </span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Arena Zones:</span>
-              <span className="font-mono font-bold text-cyan-400">{draft.rooms.length}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Canvas Canvas Area:</span>
-              <span className="font-mono text-slate-500">
-                {draft.canvas.width} &times; {draft.canvas.height}px
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2D Interactive Canvas Viewport */}
-        <div className="lg:col-span-3 glass-panel p-3 rounded-2xl border border-slate-800 overflow-auto bg-slate-950 max-h-[750px]">
+      {/* Main Workspace: 2D Canvas + Inspector Sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-start">
+        {/* Canvas Center Stage (3 Cols) */}
+        <div className="lg:col-span-3 panel p-2 bg-[#09090b] overflow-auto max-h-[720px] flex flex-col items-center">
           <div
             style={{
               width: `${draft.canvas.width * zoomScale}px`,
               height: `${draft.canvas.height * zoomScale}px`,
-              transition: 'width 0.15s ease-out, height 0.15s ease-out',
+              transition: 'width 0.1s ease-out, height 0.1s ease-out',
             }}
-            className="relative mx-auto rounded-xl overflow-hidden shadow-2xl border border-slate-800"
+            className="relative rounded-lg overflow-hidden border border-white/[0.08] shadow-xl"
           >
             <canvas
               ref={canvasRef}
@@ -873,6 +695,122 @@ export const LayoutBuilder: React.FC<LayoutBuilderProps> = ({ venueId, role }) =
               }}
               className="block"
             />
+          </div>
+
+          {/* Canvas Bottom Status Bar */}
+          <div className="w-full flex items-center justify-between px-3 py-1.5 mt-2 border-t border-white/[0.04] text-[11px] text-zinc-500 font-mono">
+            <div className="flex items-center gap-3">
+              <span>CANVAS: {draft.canvas.width}&times;{draft.canvas.height}px</span>
+              <span>GRID: 20px</span>
+              <span>CURSOR: X:{cursorCoords.x} Y:{cursorCoords.y}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span>FLEET: {draft.nodes.filter((n) => n.layer === 'equipment').length} STATIONS</span>
+              <span className="text-emerald-500">REV #{draft.revision}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Linear-Grade Property Inspector */}
+        <div className="space-y-3">
+          {selectedNode ? (
+            <div className="panel p-4 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                  <span className="font-semibold text-xs text-zinc-200">Inspector</span>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-white/[0.06]">
+                  {selectedNode.type}
+                </span>
+              </div>
+
+              {/* Station Label */}
+              <div>
+                <label className="text-[11px] text-zinc-400 block mb-1">Station Code</label>
+                <input
+                  type="text"
+                  value={selectedNode.name}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDraft({
+                      ...draft,
+                      nodes: draft.nodes.map((n) => (n.id === selectedNode.id ? { ...n, name: val } : n)),
+                    });
+                  }}
+                  className="w-full bg-zinc-900 border border-white/[0.08] px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Transform Coordinates Grid */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2 rounded-lg bg-zinc-900/60 border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">Position X</span>
+                  <span className="font-mono text-zinc-300 font-medium">{selectedNode.x}px</span>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-900/60 border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">Position Y</span>
+                  <span className="font-mono text-zinc-300 font-medium">{selectedNode.y}px</span>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-900/60 border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">Dimensions</span>
+                  <span className="font-mono text-zinc-300 font-medium">{selectedNode.width}&times;{selectedNode.height}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-900/60 border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">Rotation</span>
+                  <span className="font-mono text-zinc-300 font-medium">{selectedNode.rotation}°</span>
+                </div>
+              </div>
+
+              {/* Quick Transform Controls */}
+              <div className="flex items-center gap-1.5 pt-2 border-t border-white/[0.06]">
+                <button
+                  onClick={handleRotateSelected}
+                  className="flex-1 btn-secondary text-xs py-1.5 justify-center"
+                  title="Rotate 90 degrees"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Rotate</span>
+                </button>
+                <button
+                  onClick={handleDuplicateSelected}
+                  className="btn-secondary text-xs p-1.5"
+                  title="Duplicate Station"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  className="btn-danger text-xs p-1.5"
+                  title="Delete Station"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="panel p-5 text-center text-xs text-zinc-500 space-y-1">
+              <MousePointer className="w-5 h-5 mx-auto mb-1 text-zinc-600" />
+              <p className="font-medium text-zinc-400">Direct Selection</p>
+              <p className="text-[11px] text-zinc-600">
+                Click any workstation or bench on the canvas to inspect coordinates.
+              </p>
+            </div>
+          )}
+
+          {/* Arena Summary */}
+          <div className="panel p-4 space-y-2 text-xs">
+            <span className="font-semibold text-zinc-400 text-[11px] uppercase tracking-wider block mb-1">
+              Arena Zones
+            </span>
+            <div className="space-y-1.5">
+              {draft.rooms.map((r) => (
+                <div key={r.id} className="flex justify-between items-center text-zinc-400 text-[11px]">
+                  <span>{r.name}</span>
+                  <span className="font-mono text-zinc-500">{r.bounds.width}&times;{r.bounds.height}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

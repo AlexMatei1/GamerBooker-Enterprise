@@ -3,13 +3,13 @@ import {
   Gamepad2,
   ShieldCheck,
   Building2,
-  Activity,
   Layers,
   CalendarCheck,
   UtensilsCrossed,
   Coins,
   FileSpreadsheet,
   AlertOctagon,
+  ChevronDown,
 } from 'lucide-react';
 import type { VenueRole } from '../types/dashboard';
 
@@ -29,39 +29,39 @@ export const Header: React.FC<HeaderProps> = ({
   venueName,
 }) => {
   const tabs = [
-    { id: 'floor', label: 'Live Floor & Intake', icon: CalendarCheck },
-    { id: 'layout', label: 'Layout Builder', icon: Layers },
-    { id: 'bar', label: 'Bar Board & F&B', icon: UtensilsCrossed },
-    { id: 'pricing', label: 'Pricing & Policies', icon: Coins },
-    { id: 'financials', label: 'Daily Ledger & Audits', icon: FileSpreadsheet },
-    { id: 'runbooks', label: 'Runbooks & Go/No-Go', icon: AlertOctagon },
+    { id: 'floor', label: 'Live Floor', icon: CalendarCheck, shortcut: '1' },
+    { id: 'layout', label: 'Layout Studio', icon: Layers, shortcut: '2' },
+    { id: 'bar', label: 'F&B Orders', icon: UtensilsCrossed, shortcut: '3' },
+    { id: 'pricing', label: 'Pricing Engine', icon: Coins, shortcut: '4' },
+    { id: 'financials', label: 'Daily Ledger', icon: FileSpreadsheet, shortcut: '5' },
+    { id: 'runbooks', label: 'Runbooks', icon: AlertOctagon, shortcut: '6' },
   ];
 
   return (
-    <header className="glass-panel sticky top-0 z-50 px-6 py-3 border-b border-slate-800 bg-slate-950/90">
-      <div className="flex items-center justify-between gap-4">
-        {/* Brand */}
+    <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#09090b]/90 backdrop-blur-xl px-5 py-2.5">
+      <div className="flex items-center justify-between gap-4 max-w-[1600px] mx-auto">
+        {/* Brand & Venue Context */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Gamepad2 className="w-6 h-6 text-slate-950" />
+          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.12] flex items-center justify-center text-zinc-100 shadow-sm">
+            <Gamepad2 className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold tracking-tight text-lg bg-gradient-to-r from-cyan-300 via-sky-200 to-white bg-clip-text text-transparent">
-                GamerBooker
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-400 border border-cyan-800 tracking-wider">
-                ENTERPRISE
-              </span>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm tracking-tight text-zinc-100">
+              GamerBooker
+            </span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+              ENT
+            </span>
+            <span className="text-zinc-600 font-light">/</span>
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors">
+              <span className="font-medium text-zinc-300">{venueName}</span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
             </div>
-            <p className="text-xs text-slate-400 flex items-center gap-1.5">
-              <Building2 className="w-3 h-3 text-cyan-400" /> {venueName}
-            </p>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800/80">
+        {/* Clean Segmented Navigation Tabs */}
+        <nav className="flex items-center gap-0.5 bg-zinc-900/90 p-1 rounded-xl border border-white/[0.06]">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = currentTab === tab.id;
@@ -69,39 +69,38 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-120 ${
                   active
-                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm shadow-cyan-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-zinc-800 text-zinc-100 shadow-sm shadow-black/40 border border-white/[0.08]'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border border-transparent'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${active ? 'text-cyan-400' : 'text-slate-500'}`} />
-                {tab.label}
+                <Icon className={`w-3.5 h-3.5 ${active ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                <span>{tab.label}</span>
               </button>
             );
           })}
         </nav>
 
-        {/* Staff Role Switcher & Live Pulse */}
+        {/* Role Switcher & Live Health Pulse */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800 text-xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-400">Staff Role:</span>
+          <div className="flex items-center gap-2 bg-zinc-900 px-2.5 py-1 rounded-lg border border-white/[0.08] text-xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
             <select
               value={currentRole}
               onChange={(e) => onSelectRole(e.target.value as VenueRole)}
-              className="bg-transparent font-bold text-cyan-400 focus:outline-none cursor-pointer"
+              className="bg-transparent font-medium text-zinc-200 text-xs focus:outline-none cursor-pointer pr-1"
             >
-              <option value="OWNER" className="bg-slate-900 text-slate-100">Owner</option>
-              <option value="VENUE_MANAGER" className="bg-slate-900 text-slate-100">Venue Manager</option>
-              <option value="RECEPTION" className="bg-slate-900 text-slate-100">Reception Desk</option>
-              <option value="BAR_STAFF" className="bg-slate-900 text-slate-100">Bar & F&B</option>
+              <option value="OWNER" className="bg-zinc-900 text-zinc-200">Owner (Admin)</option>
+              <option value="VENUE_MANAGER" className="bg-zinc-900 text-zinc-200">Venue Manager</option>
+              <option value="RECEPTION" className="bg-zinc-900 text-zinc-200">Reception Desk</option>
+              <option value="BAR_STAFF" className="bg-zinc-900 text-zinc-200">Bar & F&B</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 px-2 py-1 rounded bg-emerald-950/40 border border-emerald-800/40">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            API ONLINE
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 px-2 py-1 rounded bg-zinc-900 border border-white/[0.06]">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Operational</span>
           </div>
         </div>
       </div>
