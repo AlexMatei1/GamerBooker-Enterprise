@@ -15,7 +15,7 @@ export const App: React.FC = () => {
   const venueName = 'Nexus Gaming Arena — Bucharest Central';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
       <Header
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -24,7 +24,8 @@ export const App: React.FC = () => {
         venueName={venueName}
       />
 
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      {/* Main Command Center Content */}
+      <main className="flex-1 p-6 max-w-[1600px] mx-auto w-full">
         {currentTab === 'floor' && <LiveFloorView venueId={venueId} role={currentRole} />}
         {currentTab === 'layout' && <LayoutBuilder venueId={venueId} role={currentRole} />}
         {currentTab === 'bar' && <BarBoard venueId={venueId} role={currentRole} />}
@@ -33,10 +34,19 @@ export const App: React.FC = () => {
         {currentTab === 'runbooks' && <OperationsRunbooks venueId={venueId} role={currentRole} />}
       </main>
 
-      <footer className="border-t border-slate-900 py-4 px-6 text-center text-xs text-slate-500">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <span>GamerBooker Enterprise Engine v1.0.0 &bull; Licensed for Commercial LAN & Esports Arenas</span>
-          <span className="font-mono text-[11px] text-cyan-400">Strict Romanian Compliance: Law 42/2024 &bull; Fiscal Chaining &bull; HMAC Token Pass</span>
+      <footer className="border-t border-slate-900/80 bg-slate-950/80 backdrop-blur-md py-4 px-6 text-xs text-slate-500 mt-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-between max-w-[1600px] mx-auto gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>GamerBooker Enterprise Engine v1.0.0 &bull; Licensed for Commercial LAN & Esports Arenas</span>
+          </div>
+          <div className="flex items-center gap-3 font-mono text-[11px]">
+            <span className="text-cyan-400">Strict Law 42/2024 Minors Protection</span>
+            <span className="text-slate-700">&bull;</span>
+            <span className="text-emerald-400">ANAF Fiscal Chain Validated</span>
+            <span className="text-slate-700">&bull;</span>
+            <span className="text-purple-400">Anti-Collision Layout Graph</span>
+          </div>
         </div>
       </footer>
     </div>
