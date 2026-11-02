@@ -1,7 +1,8 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
 import { SandboxPaymentProvider } from './sandbox-psp.provider';
+import { StripePaymentProvider } from './stripe-psp.provider';
 import type {
   PaymentProvider,
   CreateIntentInput,
@@ -43,8 +44,14 @@ export class PaymentsService {
   private readonly providers: Map<string, PaymentProvider> = new Map();
   private readonly paymentCaptureHandlers: Array<(intent: PaymentIntentRow) => Promise<void>> = [];
 
-  constructor(private readonly sandboxProvider: SandboxPaymentProvider) {
+  constructor(
+    private readonly sandboxProvider: SandboxPaymentProvider,
+    @Optional() private readonly stripeProvider?: StripePaymentProvider,
+  ) {
     this.registerProvider(sandboxProvider);
+    if (stripeProvider) {
+      this.registerProvider(stripeProvider);
+    }
   }
 
   onPaymentCaptured(handler: (intent: PaymentIntentRow) => Promise<void>): void {

@@ -1,0 +1,101 @@
+# ==============================================================================
+# GamerBooker Enterprise v1.0 — Production Multi-Container Orchestration
+# ==============================================================================
+
+services:
+  # 1. Primary PostgreSQL 16 Database with GiST Exclusion Constraints
+  postgres:
+    image: postgres:16-alpine
+    container_name: gamerbooker_prod_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gamerbooker_prod_secure_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-gamerbooker_prod}
+    ports:
+      - "5432:5432"
+    volumes:
+      - prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gamerbooker_prod}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. Redis 7 High-Speed In-Memory Cache & Session Broker
+  redis:
+    image: redis:7-alpine
+    container_name: gamerbooker_prod_redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_prod_secure_2026}
+    ports:
+      - "6379:6379"
+    volumes:
+      - prod_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_prod_secure_2026}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 3. Core NestJS API Engine & Swagger Documentation
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gamerbooker_prod_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-gamerbooker_prod_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-gamerbooker_prod}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_prod_secure_2026}@redis:6379
+      MFA_SECRET_KEY: ${MFA_SECRET_KEY:-prod_mfa_secret_key_0123456789abcdef}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    ports:
+      - "3000:3000"
+
+  # 4. Enterprise Venue Operations Dashboard (Vite + Nginx)
+  venue-dashboard:
+    build:
+      context: .
+      dockerfile: apps/venue-dashboard/Dockerfile
+    container_name: gamerbooker_prod_dashboard
+    restart: always
+    ports:
+      - "5173:80"
+
+  # 5. Customer Mobile Web App (Vite + Nginx)
+  mobile-app:
+    build:
+      context: .
+      dockerfile: apps/mobile-app/Dockerfile
+    container_name: gamerbooker_prod_mobile
+    restart: always
+    ports:
+      - "5174:80"
+
+  # 6. Global Edge Reverse Proxy Gateway
+  gateway:
+    image: nginx:alpine
+    container_name: gamerbooker_prod_gateway
+    restart: always
+    depends_on:
+      - backend
+      - venue-dashboard
+      - mobile-app
+    volumes:
+      - ./deploy/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  prod_pgdata:
+  prod_redisdata:

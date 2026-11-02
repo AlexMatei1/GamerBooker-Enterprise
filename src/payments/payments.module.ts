@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsService } from './payments.service';
 import { SandboxPaymentProvider } from './sandbox-psp.provider';
+import { StripePaymentProvider } from './stripe-psp.provider';
 import { WebhooksController } from './webhooks.controller';
 import { RefundsService } from './refunds.service';
 import { ReconciliationService } from './reconciliation.service';
@@ -13,12 +14,14 @@ import { ReconciliationController } from './reconciliation.controller';
   providers: [
     PaymentsService,
     SandboxPaymentProvider,
+    StripePaymentProvider,
     RefundsService,
     ReconciliationService,
   ],
   exports: [
     PaymentsService,
     SandboxPaymentProvider,
+    StripePaymentProvider,
     RefundsService,
     ReconciliationService,
   ],
