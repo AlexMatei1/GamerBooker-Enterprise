@@ -20,7 +20,8 @@ export function getPool(): pg.Pool {
   if (!connectionString || connectionString.length === 0) {
     throw new Error('DATABASE_URL is not set; cannot open a database pool');
   }
-  pool = new Pool({ connectionString });
+  const max = process.env.PG_MAX_POOL ? Number(process.env.PG_MAX_POOL) : 30;
+  pool = new Pool({ connectionString, max });
   return pool;
 }
 

@@ -408,6 +408,7 @@ export class OrdersService {
         null,
         null,
         booking.id,
+        client,
       );
 
       // Link payment_intent_id to order

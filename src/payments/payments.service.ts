@@ -75,12 +75,13 @@ export class PaymentsService {
     groupBookingId?: string | null,
     groupParticipantId?: string | null,
     bookingId?: string | null,
+    dbClient?: { query: (...args: any[]) => Promise<any> },
   ): Promise<IntentResult & { intentId: string }> {
     const provider = this.getProvider(providerName);
-    const pool = getPool();
+    const db = dbClient || getPool();
 
     // Check idempotency key first
-    const existing = await pool.query<PaymentIntentRow>(
+    const existing = await db.query<PaymentIntentRow>(
       'SELECT * FROM payment_intents WHERE idempotency_key = $1',
       [input.idempotencyKey],
     );
@@ -95,7 +96,7 @@ export class PaymentsService {
 
     const providerResult = await provider.createIntent(input);
 
-    const inserted = await pool.query<{ id: string }>(
+    const inserted = await db.query<{ id: string }>(
       `INSERT INTO payment_intents
         (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata, group_booking_id, group_participant_id, booking_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)

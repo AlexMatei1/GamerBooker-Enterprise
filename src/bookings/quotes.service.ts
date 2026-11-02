@@ -5,6 +5,7 @@ import { AuthHttpError } from '../auth/auth-error';
 import { PoliciesService } from './policies.service';
 import { PricingService } from './pricing.service';
 import { validateBookingInterval } from './policy.validator';
+import { validateTimezoneSlot } from './timezone.validator';
 import type {
   CreateQuoteInput,
   PriceQuote,
@@ -91,13 +92,17 @@ export class QuotesService {
     const pool = getPool();
 
     // 1. Check venue existence
-    const venueCheck = await pool.query<{ id: string; publication_state: string }>(
-      'SELECT id, publication_state FROM venues WHERE id = $1',
+    const venueCheck = await pool.query<{ id: string; publication_state: string; timezone?: string }>(
+      'SELECT id, publication_state, timezone FROM venues WHERE id = $1',
       [venueId],
     );
     if (venueCheck.rows.length === 0) {
       throw new AuthHttpError(HttpStatus.NOT_FOUND, 'RESOURCE_NOT_FOUND', 'Venue not found.');
     }
+
+    const venueTz = venueCheck.rows[0].timezone || 'Europe/Bucharest';
+    validateTimezoneSlot(input.starts_at, venueTz);
+    validateTimezoneSlot(input.ends_at, venueTz);
 
     // 2. Resolve Effective Policy and validate booking duration
     const effectivePolicy = await this.policiesService.resolveEffectivePolicy(

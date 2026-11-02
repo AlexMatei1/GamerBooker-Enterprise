@@ -5,6 +5,7 @@ import { AuthHttpError } from '../auth/auth-error';
 import { QuotesService } from './quotes.service';
 import { PoliciesService } from './policies.service';
 import { validateBookingInterval } from './policy.validator';
+import { validateTimezoneSlot } from './timezone.validator';
 import type {
   CreatePackageInput,
   UpdatePackageInput,
@@ -388,6 +389,11 @@ export class PackagesService {
 
     const endsAtMs = start.getTime() + pkg.duration_minutes * 60 * 1000;
     const end = new Date(endsAtMs);
+
+    const vRes = await pool.query<{ timezone?: string }>('SELECT timezone FROM venues WHERE id = $1', [venueId]);
+    const venueTz = vRes.rows[0]?.timezone || 'Europe/Bucharest';
+    validateTimezoneSlot(input.starts_at, venueTz);
+    validateTimezoneSlot(end.toISOString(), venueTz);
 
     // 1. Validate resource
     const resRes = await pool.query<any>(
