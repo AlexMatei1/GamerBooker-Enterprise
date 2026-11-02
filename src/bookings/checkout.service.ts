@@ -481,7 +481,7 @@ export class CheckoutService implements OnModuleInit {
           staffId,
           input.amount_minor,
           input.payment_method,
-          input.reference,
+          input.reference || `RCP-${randomBytes(4).toString('hex').toUpperCase()}`,
           input.notes || null,
         ],
       );
