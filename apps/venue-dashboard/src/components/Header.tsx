@@ -19,6 +19,7 @@ interface HeaderProps {
   currentRole: VenueRole;
   onSelectRole: (role: VenueRole) => void;
   venueName: string;
+  onOpenCommandPalette: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentRole,
   onSelectRole,
   venueName,
+  onOpenCommandPalette,
 }) => {
   const tabs = [
     { id: 'floor', label: 'Live Floor', icon: CalendarCheck, shortcut: '1' },
@@ -83,7 +85,19 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Role Switcher & Live Health Pulse */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={onOpenCommandPalette}
+            className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 px-2.5 py-1 rounded-lg border border-white/[0.08] text-xs transition-colors"
+            title="Command Palette (Cmd+K / Ctrl+K)"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Search...</span>
+            <kbd className="px-1.5 py-0.2 rounded text-[10px] font-mono text-zinc-500 bg-zinc-800 border border-white/[0.06]">
+              ⌘K
+            </kbd>
+          </button>
+
           <div className="flex items-center gap-2 bg-zinc-900 px-2.5 py-1 rounded-lg border border-white/[0.08] text-xs">
             <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
             <select
