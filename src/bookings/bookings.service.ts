@@ -406,6 +406,15 @@ export class BookingsService {
 
       const booking = res.rows[0];
 
+      // BOLA check: customer cannot act on another customer's booking
+      if (actorRole === 'CUSTOMER' && booking.customer_id !== actorId) {
+        throw new AuthHttpError(
+          HttpStatus.NOT_FOUND,
+          'BOOKING_NOT_FOUND',
+          'Booking not found',
+        );
+      }
+
       // 2. Concurrency check (optimistic lock)
       if (booking.version !== input.expected_version) {
         throw new AuthHttpError(
