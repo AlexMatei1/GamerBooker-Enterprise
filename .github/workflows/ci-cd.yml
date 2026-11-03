@@ -1,0 +1,168 @@
+name: GamerBooker CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # 1. Quality Assurance & Automated Testing
+  # ============================================================================
+  verify:
+    name: Lint, Typecheck & 42 Test Suites
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: gamerbooker_dev
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd apps/venue-dashboard && npm ci
+          cd ../mobile-app && npm ci
+
+      - name: Typecheck Backend (NestJS)
+        run: npm run typecheck
+
+      - name: Typecheck Venue Dashboard (React)
+        run: cd apps/venue-dashboard && npx tsc --noEmit
+
+      - name: Typecheck Mobile Web App (React)
+        run: cd apps/mobile-app && npx tsc --noEmit
+
+      - name: Apply Database Migrations
+        env:
+          DATABASE_URL: postgresql://postgres@localhost:5433/gamerbooker_dev
+        run: node db/migrate.js
+
+      - name: Run 42 Test Suites (525 Tests)
+        env:
+          DATABASE_URL: postgresql://postgres@localhost:5433/gamerbooker_dev
+          MFA_SECRET_KEY: test-mfa-key-0123456789abcdef0123456789
+          NODE_ENV: test
+        run: npm test -- --runInBand --detectOpenHandles --forceExit
+
+      - name: Build Frontends Production Artifacts
+        run: |
+          cd apps/venue-dashboard && npm run build
+          cd ../mobile-app && npm run build
+
+  # ============================================================================
+  # 2. Multi-Stage Docker Image Build
+  # ============================================================================
+  build-docker:
+    name: Build Multi-Stage Docker Containers
+    needs: verify
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: gamerbooker/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Venue Dashboard Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/venue-dashboard/Dockerfile
+          push: false
+          tags: gamerbooker/venue-dashboard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Mobile App Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/mobile-app/Dockerfile
+          push: false
+          tags: gamerbooker/mobile-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # 3. Automated Zero-Downtime Deployment
+  # ============================================================================
+  deploy:
+    name: Production Cloud Deployment
+    needs: build-docker
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Only triggers if SSH_HOST secret is configured in GitHub repository
+      - name: Execute Remote Deployment via SSH
+        if: env.SSH_HOST != ''
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          eval $(ssh-agent -s)
+          echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+          ssh "$SSH_USER@$SSH_HOST" << 'EOF'
+            set -e
+            cd /opt/gamerbooker
+            git pull origin main
+            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.prod.yml run --rm backend node db/migrate.js
+            docker compose -f docker-compose.prod.yml up -d
+            docker system prune -f
+          EOF
+
+      - name: Post-Deployment Smoke Check
+        if: env.APP_URL != ''
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          curl --fail --retry 5 --retry-delay 3 "$APP_URL/health" || exit 1
