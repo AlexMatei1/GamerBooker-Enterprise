@@ -1,16 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Gamepad2,
   ShieldCheck,
-  Building2,
-  Layers,
   CalendarCheck,
   UtensilsCrossed,
-  Coins,
   FileSpreadsheet,
+  Layers,
+  Coins,
   AlertOctagon,
-  ChevronDown,
   Search,
+  Sliders,
+  ChevronDown,
 } from 'lucide-react';
 import type { VenueRole } from '../types/dashboard';
 
@@ -31,94 +31,151 @@ export const Header: React.FC<HeaderProps> = ({
   venueName,
   onOpenCommandPalette,
 }) => {
-  const tabs = [
-    { id: 'floor', label: 'Live Floor', icon: CalendarCheck, shortcut: '1' },
-    { id: 'layout', label: 'Layout Studio', icon: Layers, shortcut: '2' },
-    { id: 'bar', label: 'F&B Orders', icon: UtensilsCrossed, shortcut: '3' },
-    { id: 'pricing', label: 'Pricing Engine', icon: Coins, shortcut: '4' },
-    { id: 'financials', label: 'Daily Ledger', icon: FileSpreadsheet, shortcut: '5' },
-    { id: 'runbooks', label: 'Runbooks', icon: AlertOctagon, shortcut: '6' },
+  const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
+
+  // 3 Primary everyday operational tabs (Staff use these 95% of the time)
+  const primaryTabs = [
+    { id: 'floor', label: 'Live Floor & Desk', icon: CalendarCheck },
+    { id: 'bar', label: 'Snack & Bar Orders', icon: UtensilsCrossed },
+    { id: 'financials', label: 'Cash Register & Sales', icon: FileSpreadsheet },
   ];
 
+  // Advanced Tools (CAD Studio, Pricing Rules, Runbooks)
+  const advancedTabs = [
+    { id: 'layout', label: 'CAD Layout Studio', icon: Layers, desc: 'Drag-and-drop 2D floor designer' },
+    { id: 'pricing', label: 'Pricing Engine', icon: Coins, desc: 'Hourly rates and tier rules' },
+    { id: 'runbooks', label: 'Operational Runbooks', icon: AlertOctagon, desc: 'Staff checklists & emergency guides' },
+  ];
+
+  const isAdvancedTabActive = advancedTabs.some((t) => t.id === currentTab);
+
   return (
-    <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#09090b]/90 backdrop-blur-xl px-5 py-2.5">
+    <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#09090b]/95 backdrop-blur-xl px-5 py-3">
       <div className="flex items-center justify-between gap-4 max-w-[1600px] mx-auto">
-        {/* Brand & Venue Context */}
+        {/* Brand & Venue Name */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.12] flex items-center justify-center text-zinc-100 shadow-sm">
-            <Gamepad2 className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm">
+            <Gamepad2 className="w-5 h-5" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm tracking-tight text-zinc-100">
-              GamerBooker
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-              ENT
-            </span>
-            <span className="text-zinc-600 font-light">/</span>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors">
-              <span className="font-medium text-zinc-300">{venueName}</span>
-              <ChevronDown className="w-3 h-3 text-zinc-500" />
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm tracking-tight text-white">GamerBooker</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                ARENA POS
+              </span>
+            </div>
+            <div className="text-xs text-zinc-400 font-medium truncate max-w-[200px] sm:max-w-none">
+              {venueName}
             </div>
           </div>
         </div>
 
-        {/* Clean Segmented Navigation Tabs */}
-        <nav className="flex items-center gap-0.5 bg-zinc-900/90 p-1 rounded-xl border border-white/[0.06]">
-          {tabs.map((tab) => {
+        {/* Clean, Human-Friendly Navigation */}
+        <nav className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-2xl border border-white/[0.08] shadow-inner">
+          {primaryTabs.map((tab) => {
             const Icon = tab.icon;
             const active = currentTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-120 ${
+                onClick={() => {
+                  onSelectTab(tab.id);
+                  setShowAdvancedMenu(false);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
                   active
-                    ? 'bg-zinc-800 text-zinc-100 shadow-sm shadow-black/40 border border-white/[0.08]'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border border-transparent'
+                    ? 'bg-white text-black shadow-md'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${active ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                <Icon className={`w-4 h-4 ${active ? 'text-black' : 'text-zinc-500'}`} />
                 <span>{tab.label}</span>
               </button>
             );
           })}
+
+          {/* Advanced Manager Tools Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowAdvancedMenu(!showAdvancedMenu)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                isAdvancedTabActive
+                  ? 'bg-zinc-800 text-emerald-400 border border-emerald-500/40 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Manager Studio</span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showAdvancedMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="text-[10px] uppercase font-bold text-zinc-500 px-3 py-1.5 tracking-wider">
+                  Configuration &amp; Engineering
+                </div>
+                {advancedTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = currentTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        onSelectTab(tab.id);
+                        setShowAdvancedMenu(false);
+                      }}
+                      className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition-all ${
+                        active
+                          ? 'bg-emerald-500/15 text-white border border-emerald-500/30'
+                          : 'hover:bg-zinc-800 text-zinc-300'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-xs text-white">{tab.label}</div>
+                        <div className="text-[11px] text-zinc-400">{tab.desc}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </nav>
 
-        {/* Role Switcher & Live Health Pulse */}
+        {/* Search / Omnibar & Staff Role Switcher */}
         <div className="flex items-center gap-2.5">
           <button
             onClick={onOpenCommandPalette}
-            className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 px-2.5 py-1 rounded-lg border border-white/[0.08] text-xs transition-colors"
-            title="Command Palette (Cmd+K / Ctrl+K)"
+            className="hidden md:flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-xl border border-white/[0.08] text-xs font-medium transition-colors"
+            title="Search anything (Cmd+K / Ctrl+K)"
           >
             <Search className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Search...</span>
-            <kbd className="px-1.5 py-0.2 rounded text-[10px] font-mono text-zinc-500 bg-zinc-800 border border-white/[0.06]">
+            <span>Search...</span>
+            <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-500 bg-zinc-800 border border-white/[0.06]">
               ⌘K
             </kbd>
           </button>
 
-          <div className="flex items-center gap-2 bg-zinc-900 px-2.5 py-1 rounded-lg border border-white/[0.08] text-xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+          {/* Role Pill */}
+          <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-xl border border-white/[0.08] text-xs">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <select
               value={currentRole}
               onChange={(e) => onSelectRole(e.target.value as VenueRole)}
-              className="bg-transparent font-medium text-zinc-200 text-xs focus:outline-none cursor-pointer pr-1"
+              className="bg-transparent font-semibold text-zinc-200 text-xs focus:outline-none cursor-pointer"
             >
               <option value="OWNER" className="bg-zinc-900 text-zinc-200">Owner (Admin)</option>
               <option value="VENUE_MANAGER" className="bg-zinc-900 text-zinc-200">Venue Manager</option>
               <option value="RECEPTION" className="bg-zinc-900 text-zinc-200">Reception Desk</option>
-              <option value="BAR_STAFF" className="bg-zinc-900 text-zinc-200">Bar & F&B</option>
+              <option value="BAR_STAFF" className="bg-zinc-900 text-zinc-200">Bar &amp; F&amp;B Staff</option>
             </select>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 px-2 py-1 rounded bg-zinc-900 border border-white/[0.06]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Operational</span>
           </div>
         </div>
       </div>
     </header>
   );
 };
+
+export default Header;
