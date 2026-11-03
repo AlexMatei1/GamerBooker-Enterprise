@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   AlertOctagon,
   ChevronDown,
+  Search,
 } from 'lucide-react';
 import type { VenueRole } from '../types/dashboard';
 
