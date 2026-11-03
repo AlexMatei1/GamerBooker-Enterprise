@@ -25,7 +25,13 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
   const [secondsRemaining, setSecondsRemaining] = useState(pass.remainingSeconds || 7200);
   const [tokenCounter, setTokenCounter] = useState(30);
   const [staffCalled, setStaffCalled] = useState(false);
+  const [extendedToast, setExtendedToast] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
+
+  // Synchronize with external pass updates (e.g. when session extended or updated)
+  useEffect(() => {
+    setSecondsRemaining(pass.remainingSeconds);
+  }, [pass.remainingSeconds]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -45,6 +51,12 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
   const handleCallStaff = () => {
     setStaffCalled(true);
     setTimeout(() => setStaffCalled(false), 5000);
+  };
+
+  const handleExtend = () => {
+    onExtendSession();
+    setExtendedToast(true);
+    setTimeout(() => setExtendedToast(false), 4000);
   };
 
   return (
@@ -223,13 +235,20 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
         </div>
       )}
 
+      {extendedToast && (
+        <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-xs flex items-center gap-2.5 text-emerald-300 shadow-xl animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="font-semibold">✓ Added +1 Hour (3,600s) to your session! New total: {pass.totalRon} RON</span>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-2">
         <button
-          onClick={onExtendSession}
-          className="py-2.5 px-3 rounded-xl bg-white text-zinc-950 font-medium text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-200 transition-colors shadow-sm"
+          onClick={handleExtend}
+          className="py-2.5 px-3 rounded-xl bg-white text-zinc-950 font-medium text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-200 transition-colors shadow-sm active:scale-[0.98]"
         >
-          <PlusCircle className="w-3.5 h-3.5" />
+          <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
           <span>Extend (+1h)</span>
         </button>
 

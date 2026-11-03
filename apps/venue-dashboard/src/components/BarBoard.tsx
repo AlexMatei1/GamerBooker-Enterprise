@@ -23,7 +23,6 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
   const [selectedOrderForPickup, setSelectedOrderForPickup] = useState<BarOrder | null>(null);
   const [pickupCodeInput, setPickupCodeInput] = useState('');
   const [pickupCodeError, setPickupCodeError] = useState<string | null>(null);
-  const [idDocumentNumber, setIdDocumentNumber] = useState('');
   const [ageCheckConfirmed, setAgeCheckConfirmed] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -76,19 +75,33 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
   }
 
   function confirmAgeVerification() {
-    if (!selectedOrderForAgeCheck || !ageCheckConfirmed || !idDocumentNumber.trim()) return;
+    if (!selectedOrderForAgeCheck || !ageCheckConfirmed) return;
     setOrders((prev) =>
       prev.map((o) =>
         o.id === selectedOrderForAgeCheck.id
-          ? { ...o, status: 'HANDED_OFF', age_verified_by: `ID: ${idDocumentNumber.trim().toUpperCase()}` }
+          ? { ...o, status: 'HANDED_OFF', age_verified_by: 'STAFF_VISUAL_CHECK' }
           : o,
       ),
     );
     setSelectedOrderForAgeCheck(null);
     setAgeCheckConfirmed(false);
-    setIdDocumentNumber('');
-    setToastMessage('Law 42/2024 compliance certified. Order delivered.');
+    setToastMessage('✓ Vârstă verificată vizual conform Legii 42/2024. Comandă predată.');
     setTimeout(() => setToastMessage(null), 3500);
+  }
+
+  function handleRefuseAgeVerification() {
+    if (!selectedOrderForAgeCheck) return;
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === selectedOrderForAgeCheck.id
+          ? { ...o, status: 'CANCELLED', age_verified_by: 'REFUSED_UNDERAGE' }
+          : o,
+      ),
+    );
+    setSelectedOrderForAgeCheck(null);
+    setAgeCheckConfirmed(false);
+    setToastMessage('⚠️ Comandă refuzată: Clientul este minor. Banii au fost returnați.');
+    setTimeout(() => setToastMessage(null), 4000);
   }
 
   const columns: { id: BarOrder['status']; label: string; count: number }[] = [
@@ -306,53 +319,53 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-zinc-900 border border-white/[0.04] text-xs text-zinc-300 space-y-1">
-              <span className="text-zinc-400 font-medium text-[11px]">Restricted Items:</span>
-              <ul className="list-disc pl-4 text-[11px] text-zinc-300">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-zinc-300 space-y-2">
+              <div className="flex items-center gap-1.5 text-amber-300 font-semibold text-xs">
+                <span>Produse supuse restricțiilor de vârstă:</span>
+              </div>
+              <ul className="list-disc pl-4 text-xs text-zinc-300 space-y-0.5">
                 {selectedOrderForAgeCheck.items
                   .filter((i) => i.age_restricted)
                   .map((i) => (
                     <li key={i.id}>{i.quantity}&times; {i.title}</li>
                   ))}
               </ul>
+              <p className="text-[11px] text-zinc-400 pt-1">
+                Conform legii, este suficientă <strong>prezentarea vizuală a actului de identitate</strong> pentru confirmarea anului nașterii. Reținerea buletinului la recepție este interzisă prin lege.
+              </p>
             </div>
 
-            <div>
-              <label className="text-[11px] text-zinc-400 block mb-1">Customer National ID / Passport Number:</label>
-              <input
-                type="text"
-                value={idDocumentNumber}
-                onChange={(e) => setIdDocumentNumber(e.target.value)}
-                placeholder="e.g. RK 123456"
-                className="w-full bg-zinc-900 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-amber-400 uppercase"
-              />
-            </div>
-
-            <label className="flex items-start gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-900 border border-white/[0.08] text-xs text-zinc-300 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={ageCheckConfirmed}
                 onChange={(e) => setAgeCheckConfirmed(e.target.checked)}
-                className="mt-0.5 rounded border-zinc-700 text-amber-500 bg-zinc-900"
+                className="mt-0.5 rounded border-zinc-700 text-amber-500 bg-zinc-950 w-4 h-4 cursor-pointer"
               />
-              <span className="text-[11px]">
-                I certify that I have physically inspected the customer's legal identification document and verified age &ge; 18 years.
+              <span className="text-xs font-medium text-zinc-200">
+                Confirm că am inspectat vizual actul clientului și acesta are vârsta legală (16+ / 18+ ani).
               </span>
             </label>
 
-            <div className="flex gap-2 pt-1 border-t border-white/[0.06]">
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-white/[0.06]">
               <button
                 onClick={() => setSelectedOrderForAgeCheck(null)}
-                className="flex-1 btn-secondary text-xs py-1.5 justify-center"
+                className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
               >
-                Cancel
+                Anulează
+              </button>
+              <button
+                onClick={handleRefuseAgeVerification}
+                className="py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold transition-colors"
+              >
+                ✗ Client Minor (Refuză &amp; Returnează)
               </button>
               <button
                 onClick={confirmAgeVerification}
-                disabled={!ageCheckConfirmed || !idDocumentNumber.trim()}
-                className="flex-1 btn-primary text-xs py-1.5 justify-center disabled:opacity-40"
+                disabled={!ageCheckConfirmed}
+                className="flex-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-all disabled:opacity-40"
               >
-                Certify & Deliver
+                ✓ Confirmă Vârsta &amp; Predă
               </button>
             </div>
           </div>

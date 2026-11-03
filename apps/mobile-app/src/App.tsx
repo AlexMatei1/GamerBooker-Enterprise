@@ -73,12 +73,29 @@ export const App: React.FC = () => {
     setActiveOrders((prev) => [order, ...prev]);
   };
 
-  const handleExtendSession = () => {
+  // Global session timer ticker for Dynamic Island and ticket pass
+  useEffect(() => {
     if (!activePass) return;
-    setActivePass({
-      ...activePass,
-      remainingSeconds: activePass.remainingSeconds + 3600,
-      totalRon: (parseFloat(activePass.totalRon) + 50).toFixed(2),
+    const timer = setInterval(() => {
+      setActivePass((prev) => {
+        if (!prev || prev.remainingSeconds <= 0) return prev;
+        return {
+          ...prev,
+          remainingSeconds: prev.remainingSeconds - 1,
+        };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activePass?.bookingId]);
+
+  const handleExtendSession = () => {
+    setActivePass((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        remainingSeconds: prev.remainingSeconds + 3600,
+        totalRon: (parseFloat(prev.totalRon) + 50).toFixed(2),
+      };
     });
   };
 
