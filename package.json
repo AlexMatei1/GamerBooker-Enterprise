@@ -5,10 +5,12 @@
   "description": "GamerBooker Enterprise v1.0",
   "scripts": {
     "build": "nest build",
+    "build:all": "nest build && npm --prefix apps/venue-dashboard run build && npm --prefix apps/mobile-app run build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "lint": "eslint \"{src,test,tests}/**/*.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:all": "npm run typecheck && npm --prefix apps/venue-dashboard exec tsc -- --noEmit && npm --prefix apps/mobile-app exec tsc -- --noEmit",
     "test": "jest"
   },
   "dependencies": {
