@@ -170,7 +170,7 @@ class _BoardingPassScreenState extends State<BoardingPassScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFF181922),
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                      border: Border.bottom(color: Colors.white.withOpacity(0.06)),
+                      border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,

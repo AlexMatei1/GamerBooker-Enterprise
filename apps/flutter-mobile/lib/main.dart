@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'models/models.dart';
-import 'data/mock_data.dart';
 import 'screens/explore_screen.dart';
 import 'screens/seat_picker_screen.dart';
 import 'screens/checkout_screen.dart';
