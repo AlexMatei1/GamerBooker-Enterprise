@@ -8,8 +8,6 @@ import {
   Tag,
   Smartphone,
   Wallet,
-  CheckCircle2,
-  Sparkles,
 } from 'lucide-react';
 import type { BookingQuote, ActivePass } from '../types/mobile';
 import { realtime } from '../services/realtime';

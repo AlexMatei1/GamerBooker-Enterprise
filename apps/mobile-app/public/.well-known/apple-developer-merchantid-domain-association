@@ -1,0 +1,4 @@
+# Apple Pay Merchant Domain Association Verification File for GamerBooker Enterprise
+# Place Apple Developer verification token here for live merchant verification:
+# https://developer.apple.com/help/account/configure-apple-pay/verify-a-merchant-domain/
+7b226d65726368616e744964223a226d65726368616e742e726f2e67616d6572626f6f6b65722e617070227d

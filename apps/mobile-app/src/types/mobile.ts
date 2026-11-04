@@ -47,6 +47,7 @@ export interface BookingQuote {
 
 export interface ActivePass {
   bookingId: string;
+  customerName?: string;
   venueName: string;
   stationName: string;
   zoneName: string;

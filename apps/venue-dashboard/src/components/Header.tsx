@@ -45,7 +45,6 @@ export const Header: React.FC<HeaderProps> = ({
   const primaryTabs = [
     { id: 'floor', label: 'Live Floor & Desk', icon: CalendarCheck },
     { id: 'bar', label: 'Snack & Bar Orders', icon: UtensilsCrossed },
-    { id: 'station_client', label: 'PC Station Shell', icon: Monitor },
     { id: 'financials', label: 'Cash Register & Sales', icon: FileSpreadsheet },
   ];
 

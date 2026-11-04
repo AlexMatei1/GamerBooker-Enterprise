@@ -8,7 +8,7 @@ import { BarOrderingView } from './components/BarOrderingView';
 import { CustomerProfile } from './components/CustomerProfile';
 import { mockVenues, mockStations, mockMenuItems, mockUserProfile, mobileApi } from './api/client';
 import type { Screen, MobileVenue, StationItem, BookingQuote, ActivePass, BarOrder } from './types/mobile';
-import { Monitor, Clock, ChevronRight, Zap, Bell, CheckCircle2 } from 'lucide-react';
+import { Monitor, Clock, ChevronRight, Zap, Bell } from 'lucide-react';
 import { realtime } from './services/realtime';
 
 export const App: React.FC = () => {
@@ -113,11 +113,11 @@ export const App: React.FC = () => {
             id: i.item.id,
             title: i.item.name,
             quantity: i.quantity,
-            unit_price_minor: i.item.priceMinor,
-            age_restricted: i.item.isAgeRestricted,
+            unit_price_minor: i.item.price,
+            age_restricted: i.item.requiresAgeVerification,
           })),
           total_minor: order.totalAmount,
-          age_verification_required: order.items.some((i) => i.item.isAgeRestricted),
+          age_verification_required: order.items.some((i) => i.item.requiresAgeVerification),
         },
       },
     });
