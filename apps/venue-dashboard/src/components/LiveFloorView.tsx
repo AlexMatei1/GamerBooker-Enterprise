@@ -18,9 +18,13 @@ import {
   ShieldCheck,
   QrCode,
   Flame,
+  LayoutGrid,
+  Map,
 } from 'lucide-react';
 import type { FloorOverviewData, LiveStationItem, CheckinQueueItem, VenueRole } from '../types/dashboard';
 import { api } from '../api/client';
+import { realtime } from '../services/realtime';
+import { InteractiveFloorMap } from './InteractiveFloorMap';
 
 interface LiveFloorViewProps {
   venueId: string;
@@ -40,6 +44,7 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
   const [queue, setQueue] = useState<CheckinQueueItem[]>([]);
   const [selectedStation, setSelectedStation] = useState<LiveStationItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [viewMode, setViewMode] = useState<'CARDS' | 'FLOOR_MAP'>('FLOOR_MAP');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState<any | null>(null);
@@ -56,11 +61,48 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
   // Quick QR Scan Modal State
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrInput, setQrInput] = useState('');
+  const [stationAlerts, setStationAlerts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadData, 10000);
+
+    const unsubStaff = realtime.subscribe('STAFF_CALL', (payload) => {
+      const stId = payload.stationId || payload.data?.stationId || 'POD-01';
+      setStationAlerts((prev) => ({ ...prev, [stId]: 'Asistență Solicitată!' }));
+      showToast(`🚨 Asistență solicitată la ${stId} (${payload.data?.reason || 'Client Call'})`);
+    });
+
+    const unsubExtend = realtime.subscribe('SESSION_EXTENDED', (payload) => {
+      const stId = payload.stationId || payload.data?.stationId;
+      if (stId) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            stations: prev.stations.map((st) => {
+              if (st.id === stId && st.current_session) {
+                return {
+                  ...st,
+                  current_session: {
+                    ...st.current_session,
+                    minutes_remaining: (st.current_session.minutes_remaining || 0) + 60,
+                  },
+                };
+              }
+              return st;
+            }),
+          };
+        });
+        showToast(`⏱️ Sesiune prelungită (+1h) la stația ${stId}!`);
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubStaff();
+      unsubExtend();
+    };
   }, [venueId]);
 
   async function loadData() {
@@ -124,6 +166,16 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
 
     setWalkInModal({ isOpen: false, station: null, customerName: '', durationHours: 2, paymentMethod: 'CARD' });
     showToast(`✓ Session started for ${customerName} on ${targetStation.name}!`);
+  }
+
+  function handleOpenWalkIn(station: LiveStationItem) {
+    setWalkInModal({
+      isOpen: true,
+      station,
+      customerName: '',
+      durationHours: 2,
+      paymentMethod: 'CARD',
+    });
   }
 
   // 1-Click Quick Add Time (+30 min, +1 hour)
@@ -326,10 +378,45 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
             </button>
           ))}
         </div>
+
+        {/* View Mode Toggle (2D Floor Plan vs Cards) */}
+        <div className="flex items-center gap-1 bg-zinc-900 border border-white/[0.08] p-1 rounded-xl">
+          <button
+            onClick={() => setViewMode('FLOOR_MAP')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              viewMode === 'FLOOR_MAP'
+                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Map className="w-3.5 h-3.5" />
+            <span>2D Floor Map</span>
+          </button>
+          <button
+            onClick={() => setViewMode('CARDS')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              viewMode === 'CARDS'
+                ? 'bg-zinc-800 text-white shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Cards</span>
+          </button>
+        </div>
       </div>
 
-      {/* 4. Large, Friendly, Tactile Station Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* Render 2D Interactive Floor Plan OR Cards Grid */}
+      {viewMode === 'FLOOR_MAP' ? (
+        <InteractiveFloorMap
+          stations={data.stations}
+          stationAlerts={stationAlerts}
+          onSelectStation={setSelectedStation}
+          onQuickWalkIn={handleOpenWalkIn}
+        />
+      ) : (
+        /* 4. Large, Friendly, Tactile Station Cards */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredStations.map((st) => {
           const isAvailable = st.status === 'AVAILABLE';
           const isOccupied = st.status === 'OCCUPIED';
@@ -385,6 +472,29 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
                   </span>
                 )}
               </div>
+
+              {/* Real-time Customer Assistance Alert */}
+              {stationAlerts[st.id] && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStationAlerts((prev) => {
+                      const next = { ...prev };
+                      delete next[st.id];
+                      return next;
+                    });
+                    showToast(`Asistență confirmată la ${st.name}`);
+                  }}
+                  className="my-2 p-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-between cursor-pointer animate-pulse hover:bg-amber-500/30 transition-all"
+                  title="Click to resolve and clear alert"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>{stationAlerts[st.id]}</span>
+                  </div>
+                  <span className="text-[10px] underline font-medium">Rezolvat &times;</span>
+                </div>
+              )}
 
               {/* Card Body: Dynamic Content Depending on Status */}
               <div className="my-3">
@@ -521,6 +631,7 @@ export const LiveFloorView: React.FC<LiveFloorViewProps> = ({ venueId }) => {
           );
         })}
       </div>
+      )}
 
       {/* ==================================================================== */}
       {/* 5. SUPER-EASY "WALK-IN CUSTOMER" CHECK-IN MODAL                      */}

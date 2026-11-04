@@ -8,8 +8,11 @@ import {
   Tag,
   Smartphone,
   Wallet,
+  CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import type { BookingQuote, ActivePass } from '../types/mobile';
+import { realtime } from '../services/realtime';
 
 interface BookingCheckoutProps {
   quote: BookingQuote;
@@ -28,6 +31,10 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const [agreedTerms, setAgreedTerms] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
+  const [cardExpiry, setCardExpiry] = useState('12/28');
+  const [cardCvc, setCardCvc] = useState('888');
+  const [cardName, setCardName] = useState('ALEX M.');
 
   const discountAmount = Math.round((quote.depositAmount * appliedDiscountPercent) / 100);
   const finalDepositDue = Math.max(0, quote.depositAmount - discountAmount);
@@ -46,6 +53,9 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
+      realtime.playSound('ready');
+      realtime.triggerHaptic([60, 80, 60]);
+
       const newPass: ActivePass = {
         bookingId: 'BK-NX-' + Math.floor(1000 + Math.random() * 9000),
         venueName: 'Nexus Gaming Arena Bucharest',
@@ -59,8 +69,22 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
         sessionStatus: 'ACTIVE',
         remainingSeconds: quote.durationHours * 3600,
       };
+
+      // Broadcast real-time booking event to venue dashboard
+      realtime.broadcast({
+        type: 'STATION_STATUS_CHANGED',
+        stationId: quote.stationName.split(' ')[0],
+        venueId: 'v-arena-bucharest-01',
+        data: {
+          status: 'OCCUPIED',
+          customerName: cardName || 'Alex M.',
+          bookingId: newPass.bookingId,
+          remainingMinutes: quote.durationHours * 60,
+        },
+      });
+
       onCompleteBooking(newPass);
-    }, 1200);
+    }, 1400);
   };
 
   return (
@@ -187,6 +211,72 @@ export const BookingCheckout: React.FC<BookingCheckoutProps> = ({
             <span className="text-[11px] font-medium block">Arena Coins</span>
           </button>
         </div>
+
+        {/* Live Stripe Card Elements / Apple Pay Visual Sheet */}
+        {paymentMethod === 'CARD' && (
+          <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/[0.1] space-y-2.5 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-white/[0.06] pb-1.5">
+              <span className="font-semibold text-zinc-200">Stripe Card Details</span>
+              <span className="font-mono text-emerald-400 flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5" /> 256-bit Encrypted
+              </span>
+            </div>
+            <div>
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Cardholder Name</label>
+              <input
+                type="text"
+                value={cardName}
+                onChange={(e) => setCardName(e.target.value.toUpperCase())}
+                placeholder="ALEX M."
+                className="w-full bg-black border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-zinc-500"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Card Number</label>
+              <input
+                type="text"
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                placeholder="4242 4242 4242 4242"
+                className="w-full bg-black border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white font-mono tracking-wider focus:outline-none focus:border-zinc-500"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Expires</label>
+                <input
+                  type="text"
+                  value={cardExpiry}
+                  onChange={(e) => setCardExpiry(e.target.value)}
+                  placeholder="MM/YY"
+                  className="w-full bg-black border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white font-mono text-center focus:outline-none focus:border-zinc-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">CVC / CVV</label>
+                <input
+                  type="text"
+                  value={cardCvc}
+                  onChange={(e) => setCardCvc(e.target.value)}
+                  placeholder="888"
+                  className="w-full bg-black border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white font-mono text-center focus:outline-none focus:border-zinc-500"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {paymentMethod === 'APPLE_PAY' && (
+          <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/[0.1] text-center space-y-2 animate-in fade-in duration-150">
+            <div className="w-10 h-10 rounded-2xl bg-white text-black mx-auto flex items-center justify-center font-bold text-lg shadow-md">
+              
+            </div>
+            <div className="text-xs font-semibold text-white">Apple Pay Ready</div>
+            <div className="text-[11px] text-zinc-400">
+              Double-click side button or use Touch ID on your device to confirm deposit.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Romanian Terms */}

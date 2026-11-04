@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { ExploreVenues } from './components/ExploreVenues';
 import { SeatPicker } from './components/SeatPicker';
@@ -8,7 +8,8 @@ import { BarOrderingView } from './components/BarOrderingView';
 import { CustomerProfile } from './components/CustomerProfile';
 import { mockVenues, mockStations, mockMenuItems, mockUserProfile, mobileApi } from './api/client';
 import type { Screen, MobileVenue, StationItem, BookingQuote, ActivePass, BarOrder } from './types/mobile';
-import { Monitor, Clock, ChevronRight, Zap } from 'lucide-react';
+import { Monitor, Clock, ChevronRight, Zap, Bell, CheckCircle2 } from 'lucide-react';
+import { realtime } from './services/realtime';
 
 export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('explore');
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
   const [selectedDuration, setSelectedDuration] = useState<number>(2);
   const [pendingQuote, setPendingQuote] = useState<BookingQuote | null>(null);
   const [islandExpanded, setIslandExpanded] = useState<boolean>(false);
+  const [realtimeToast, setRealtimeToast] = useState<string | null>(null);
 
   // Active pass state - preloaded with a live active session for immediate exploration
   const [activePass, setActivePass] = useState<ActivePass | null>({
@@ -46,6 +48,30 @@ export const App: React.FC = () => {
     },
   ]);
 
+  // Real-time synchronization with Venue Dashboard & Bar Board
+  useEffect(() => {
+    const unsubOrder = realtime.subscribe('ORDER_STATUS_CHANGED', (payload) => {
+      const { orderId, nextStatus, reason } = payload.data || {};
+      if (orderId && nextStatus) {
+        setActiveOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
+        );
+        if (nextStatus === 'HANDED_OFF') {
+          setRealtimeToast('🎉 Comandă predată! Savurează produsele.');
+        } else if (nextStatus === 'CANCELLED') {
+          setRealtimeToast(`⚠️ Comandă refuzată: ${reason === 'REFUSED_UNDERAGE' ? 'Client Minor (Bani returnați)' : 'Anulată'}`);
+        } else if (nextStatus === 'READY') {
+          setRealtimeToast('🛎️ Comanda ta este GATA de ridicare la Bar!');
+        }
+        setTimeout(() => setRealtimeToast(null), 6000);
+      }
+    });
+
+    return () => {
+      unsubOrder();
+    };
+  }, []);
+
   const handleSelectVenue = (venue: MobileVenue) => {
     setSelectedVenue(venue);
     setCurrentScreen('station');
@@ -71,6 +97,30 @@ export const App: React.FC = () => {
 
   const handlePlaceBarOrder = (order: BarOrder) => {
     setActiveOrders((prev) => [order, ...prev]);
+    realtime.broadcast({
+      type: 'ORDER_CREATED',
+      venueId: 'v-arena-bucharest-01',
+      data: {
+        order: {
+          id: order.id,
+          public_code: order.crockfordCode,
+          station_id: order.stationName,
+          fulfillment_mode: 'BAR_PICKUP',
+          status: 'PLACED',
+          pickup_code: order.crockfordCode,
+          created_at: new Date().toISOString(),
+          items: order.items.map((i) => ({
+            id: i.item.id,
+            title: i.item.name,
+            quantity: i.quantity,
+            unit_price_minor: i.item.priceMinor,
+            age_restricted: i.item.isAgeRestricted,
+          })),
+          total_minor: order.totalAmount,
+          age_verification_required: order.items.some((i) => i.item.isAgeRestricted),
+        },
+      },
+    });
   };
 
   // Global session timer ticker for Dynamic Island and ticket pass
@@ -91,10 +141,22 @@ export const App: React.FC = () => {
   const handleExtendSession = () => {
     setActivePass((prev) => {
       if (!prev) return null;
+      const newSeconds = prev.remainingSeconds + 3600;
+      const newTotal = (parseFloat(prev.totalRon) + 50).toFixed(2);
+      realtime.broadcast({
+        type: 'SESSION_EXTENDED',
+        stationId: prev.stationName.split(' ')[0],
+        data: {
+          bookingId: prev.bookingId,
+          stationName: prev.stationName,
+          remainingSeconds: newSeconds,
+          totalRon: newTotal,
+        },
+      });
       return {
         ...prev,
-        remainingSeconds: prev.remainingSeconds + 3600,
-        totalRon: (parseFloat(prev.totalRon) + 50).toFixed(2),
+        remainingSeconds: newSeconds,
+        totalRon: newTotal,
       };
     });
   };
@@ -180,6 +242,24 @@ export const App: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Real-Time Live Notification Toast */}
+          {realtimeToast && (
+            <div className="w-full mt-2 p-3 rounded-2xl bg-zinc-900/95 border border-emerald-500/40 text-xs flex items-center gap-2.5 text-zinc-100 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2">
+              <div className="w-7 h-7 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <Bell className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 font-semibold text-xs text-zinc-200">
+                {realtimeToast}
+              </div>
+              <button
+                onClick={() => setRealtimeToast(null)}
+                className="text-zinc-500 hover:text-zinc-300 text-xs px-1"
+              >
+                &times;
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Screen Routing */}

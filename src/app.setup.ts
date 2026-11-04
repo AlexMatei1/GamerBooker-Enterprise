@@ -11,6 +11,10 @@ import { requestIdMiddleware } from './common/request-id.middleware';
  * to build an envelope.
  */
 export function configureApp(app: INestApplication): void {
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
   app.use(requestIdMiddleware);
   app.setGlobalPrefix('v1', { exclude: ['healthz', 'readyz'] });
   app.useGlobalFilters(new GlobalExceptionFilter());

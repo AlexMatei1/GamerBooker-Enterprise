@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { BarOrder, VenueRole } from '../types/dashboard';
 import { api } from '../api/client';
+import { realtime } from '../services/realtime';
 
 interface BarBoardProps {
   venueId: string;
@@ -28,8 +29,20 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
 
   useEffect(() => {
     loadOrders();
-    const interval = setInterval(loadOrders, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadOrders, 10000);
+
+    const unsubscribe = realtime.subscribe('ORDER_CREATED', (payload) => {
+      if (payload.data && payload.data.order) {
+        setOrders((prev) => [payload.data.order, ...prev.filter((o) => o.id !== payload.data.order.id)]);
+        setToastMessage(`🔔 Comandă nouă (#${payload.data.order.public_code || 'NOW'}): ${payload.data.order.station_id || 'Bar'}`);
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [venueId]);
 
   async function loadOrders() {
@@ -41,6 +54,11 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
     );
+    realtime.broadcast({
+      type: 'ORDER_STATUS_CHANGED',
+      venueId,
+      data: { orderId, nextStatus },
+    });
     setToastMessage(`Order status updated to ${nextStatus}.`);
     setTimeout(() => setToastMessage(null), 3000);
   }
@@ -76,13 +94,19 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
 
   function confirmAgeVerification() {
     if (!selectedOrderForAgeCheck || !ageCheckConfirmed) return;
+    const targetOrderId = selectedOrderForAgeCheck.id;
     setOrders((prev) =>
       prev.map((o) =>
-        o.id === selectedOrderForAgeCheck.id
+        o.id === targetOrderId
           ? { ...o, status: 'HANDED_OFF', age_verified_by: 'STAFF_VISUAL_CHECK' }
           : o,
       ),
     );
+    realtime.broadcast({
+      type: 'ORDER_STATUS_CHANGED',
+      venueId,
+      data: { orderId: targetOrderId, nextStatus: 'HANDED_OFF', ageVerified: true },
+    });
     setSelectedOrderForAgeCheck(null);
     setAgeCheckConfirmed(false);
     setToastMessage('✓ Vârstă verificată vizual conform Legii 42/2024. Comandă predată.');
@@ -91,13 +115,19 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
 
   function handleRefuseAgeVerification() {
     if (!selectedOrderForAgeCheck) return;
+    const targetOrderId = selectedOrderForAgeCheck.id;
     setOrders((prev) =>
       prev.map((o) =>
-        o.id === selectedOrderForAgeCheck.id
+        o.id === targetOrderId
           ? { ...o, status: 'CANCELLED', age_verified_by: 'REFUSED_UNDERAGE' }
           : o,
       ),
     );
+    realtime.broadcast({
+      type: 'ORDER_STATUS_CHANGED',
+      venueId,
+      data: { orderId: targetOrderId, nextStatus: 'CANCELLED', reason: 'REFUSED_UNDERAGE' },
+    });
     setSelectedOrderForAgeCheck(null);
     setAgeCheckConfirmed(false);
     setToastMessage('⚠️ Comandă refuzată: Clientul este minor. Banii au fost returnați.');

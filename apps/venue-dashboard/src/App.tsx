@@ -6,6 +6,7 @@ import { BarBoard } from './components/BarBoard';
 import { PricingPolicies } from './components/PricingPolicies';
 import { FinancialLedger } from './components/FinancialLedger';
 import { OperationsRunbooks } from './components/OperationsRunbooks';
+import { StationClientShell } from './components/StationClientShell';
 import { CommandPalette } from './components/CommandPalette';
 import type { VenueRole } from './types/dashboard';
 
@@ -50,6 +51,13 @@ export const App: React.FC = () => {
         {currentTab === 'pricing' && <PricingPolicies venueId={venueId} role={currentRole} />}
         {currentTab === 'financials' && <FinancialLedger venueId={venueId} role={currentRole} />}
         {currentTab === 'runbooks' && <OperationsRunbooks venueId={venueId} role={currentRole} />}
+        {currentTab === 'station_client' && (
+          <StationClientShell
+            stationName="VIP-01 (RTX 4090)"
+            stationId="st-vip-01"
+            onExitDemo={() => setCurrentTab('floor')}
+          />
+        )}
       </main>
 
       {/* Command Palette Modal */}

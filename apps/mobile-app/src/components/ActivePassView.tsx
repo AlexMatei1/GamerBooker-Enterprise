@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import type { ActivePass } from '../types/mobile';
+import { realtime } from '../services/realtime';
 
 interface ActivePassViewProps {
   pass: ActivePass;
@@ -50,6 +51,16 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
 
   const handleCallStaff = () => {
     setStaffCalled(true);
+    realtime.broadcast({
+      type: 'STAFF_CALL',
+      stationId: pass.stationName,
+      data: {
+        customerName: pass.customerName,
+        bookingId: pass.bookingId,
+        stationName: pass.stationName,
+        timestamp: new Date().toISOString(),
+      },
+    });
     setTimeout(() => setStaffCalled(false), 5000);
   };
 
@@ -72,18 +83,24 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
 
         {/* Flip Card Toggle */}
         <button
-          onClick={() => setIsFlipped(!isFlipped)}
-          className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-white/[0.08] text-xs text-zinc-400 hover:text-white flex items-center gap-1.5 transition-colors"
+          onClick={() => {
+            setIsFlipped(!isFlipped);
+            realtime.playSound('ding');
+          }}
+          className="px-3 py-1.5 rounded-xl bg-zinc-900 border border-white/[0.08] text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
         >
-          <RotateCw className="w-3 h-3" />
-          <span>{isFlipped ? 'View Pass' : 'Wi-Fi & Info'}</span>
+          <RotateCw className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{isFlipped ? 'View Pass' : 'Hardware Specs & Wi-Fi'}</span>
         </button>
       </div>
 
       {/* Apple Wallet Style Digital Ticket Pass (Flip Card Container) */}
       <div
-        onClick={() => setIsFlipped(!isFlipped)}
-        className="rounded-2xl border border-white/[0.1] bg-[#121215] overflow-hidden shadow-2xl relative cursor-pointer select-none transition-all duration-300 hover:border-white/[0.2]"
+        onClick={() => {
+          setIsFlipped(!isFlipped);
+          realtime.playSound('ding');
+        }}
+        className="rounded-3xl border border-white/[0.12] bg-[#121216] overflow-hidden shadow-2xl relative cursor-pointer select-none transition-all duration-300 hover:border-white/[0.22] group before:absolute before:inset-0 before:bg-gradient-to-tr before:from-emerald-500/[0.04] before:via-transparent before:to-indigo-500/[0.08] before:pointer-events-none"
       >
         {!isFlipped ? (
           /* FRONT OF TICKET: Live QR Pass */
@@ -124,6 +141,13 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
                 </div>
                 <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
                   Ends at {pass.endTime}
+                </div>
+                {/* Visual Session Elapsed Bar */}
+                <div className="w-full bg-zinc-800/80 rounded-full h-1.5 mt-2.5 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(100, Math.max(5, (secondsRemaining / 10800) * 100))}%` }}
+                  />
                 </div>
               </div>
 
@@ -190,6 +214,29 @@ export const ActivePassView: React.FC<ActivePassViewProps> = ({
                 <div>
                   <span className="text-[10px] text-zinc-500 block">PASSWORD</span>
                   <span className="text-zinc-200 font-bold">NexusVIP2026</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Workstation Hardware Specifications */}
+            <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/[0.06] space-y-2 text-xs">
+              <span className="font-semibold text-zinc-200 text-xs block">Workstation Hardware Configuration</span>
+              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-zinc-400">
+                <div className="bg-zinc-950/50 p-2 rounded-lg border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">GPU</span>
+                  <span className="text-emerald-400 font-bold">RTX 4090 24GB</span>
+                </div>
+                <div className="bg-zinc-950/50 p-2 rounded-lg border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">DISPLAY</span>
+                  <span className="text-white font-bold">360Hz Fast-IPS</span>
+                </div>
+                <div className="bg-zinc-950/50 p-2 rounded-lg border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">CPU</span>
+                  <span className="text-zinc-200 font-bold">Ryzen 7 7800X3D</span>
+                </div>
+                <div className="bg-zinc-950/50 p-2 rounded-lg border border-white/[0.04]">
+                  <span className="text-[10px] text-zinc-500 block">CHAIR</span>
+                  <span className="text-zinc-200 font-bold">Secretlab Titan Evo</span>
                 </div>
               </div>
             </div>

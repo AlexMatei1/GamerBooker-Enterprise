@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Gamepad2,
   ShieldCheck,
@@ -11,8 +11,11 @@ import {
   Search,
   Sliders,
   ChevronDown,
+  Radio,
+  Monitor,
 } from 'lucide-react';
 import type { VenueRole } from '../types/dashboard';
+import { realtime } from '../services/realtime';
 
 interface HeaderProps {
   currentTab: string;
@@ -32,11 +35,17 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCommandPalette,
 }) => {
   const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
 
-  // 3 Primary everyday operational tabs (Staff use these 95% of the time)
+  useEffect(() => {
+    return realtime.onStatusChange(setRealtimeStatus);
+  }, []);
+
+  // Everyday operational tabs
   const primaryTabs = [
     { id: 'floor', label: 'Live Floor & Desk', icon: CalendarCheck },
     { id: 'bar', label: 'Snack & Bar Orders', icon: UtensilsCrossed },
+    { id: 'station_client', label: 'PC Station Shell', icon: Monitor },
     { id: 'financials', label: 'Cash Register & Sales', icon: FileSpreadsheet },
   ];
 
@@ -146,6 +155,30 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Search / Omnibar & Staff Role Switcher */}
         <div className="flex items-center gap-2.5">
+          {/* Live Sync Badge */}
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${
+              realtimeStatus === 'connected'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : realtimeStatus === 'connecting'
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+            title={`Realtime SSE connection: ${realtimeStatus}`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                realtimeStatus === 'connected'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : realtimeStatus === 'connecting'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-rose-500'
+              }`}
+            />
+            <Radio className="w-3 h-3" />
+            <span>{realtimeStatus === 'connected' ? 'Live Sync' : realtimeStatus === 'connecting' ? 'Syncing...' : 'Offline'}</span>
+          </div>
+
           <button
             onClick={onOpenCommandPalette}
             className="hidden md:flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-xl border border-white/[0.08] text-xs font-medium transition-colors"
