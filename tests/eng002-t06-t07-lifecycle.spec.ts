@@ -39,7 +39,7 @@ async function mobileToken(email: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  app = await startTestApp('lifecycle');
+  app = await startTestApp('lifecycle', { browserClient: true });
   db = app.db;
 }, 120000);
 

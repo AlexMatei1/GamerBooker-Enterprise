@@ -1,11 +1,12 @@
 # HANDOFF-ENG-506: Incident Runbooks R1-R6, Partner Training Certifications, and Pilot Launch Decision Engine
 
 ## 1. Goal & Architectural Scope
-Delivers operational excellence and pilot launch governance for GamerBooker Enterprise v1.0, satisfying:
+Describes operational and pilot features for GamerBooker Enterprise v1.0. Current assessment and verification limits are in the [handoff status index](HANDOFF-INDEX-2026-11-04.md). Sources:
 - `docs/11-delivery/04-engineering-handoff-backlog.md` (ENG-506)
-- `docs/08-operations/01-incident-runbooks.md` (Runbooks R1 - R6)
-- `docs/08-operations/02-partner-training-curriculum.md` (Curriculum & Certifications)
-- `docs/08-operations/03-pilot-rollout-and-kpis.md` (Pilot KPIs & Go/No-Go Decision Engine)
+- [`docs/11-delivery/02-operations-and-runbooks.md`](../docs/11-delivery/02-operations-and-runbooks.md) (runbooks R1–R6)
+- [`docs/11-delivery/03-rollout-metrics-and-go-no-go.md`](../docs/11-delivery/03-rollout-metrics-and-go-no-go.md) (pilot KPIs and release criteria)
+
+The four-module training curriculum and certification workflow below are ENG-506 design and implementation details in [`src/operations/runbooks.service.ts`](../src/operations/runbooks.service.ts) and [`runbooks.controller.ts`](../src/operations/runbooks.controller.ts); no separate curriculum document has been identified.
 
 Implements:
 1. **Operational Incident Runbooks (R1 - R6)**:
@@ -29,12 +30,14 @@ Implements:
      - Immediately deactivates product SKU in catalog (`active = false`).
      - Identifies all pending orders containing the SKU (`PAYMENT_PENDING`, `PLACED`, `ACCEPTED`, `PREPARING`), transitions items to `REFUNDED_UNAVAILABLE`, and tracks total refunded amounts.
 2. **Partner Training Program & Staff Certifications**:
-   - `GET /v1/training/curriculum`: Surfaces official 6-module curriculum (`MOD-001` Platform Fundamentals, `MOD-002` Floor Management & Layout, `MOD-003` Reception Operations & Check-In, `MOD-004` Bar Operations & F&B SLAs, `MOD-005` Financial Ledger & Reconciliation, `MOD-006` Incident Runbooks & Escalation).
+   - `GET /v1/training/curriculum`: Surfaces four modules: `OWNER_GOVERNANCE`, `MANAGER_OPERATIONS`, `RECEPTION_ZERO_STAFF_BOOKING`, and `BAR_LAW_42_2024_AGE_COMPLIANCE`.
    - `POST /v1/training/certify`: Manager/Owner certifies staff members upon passing assessment (stores certified score and date).
    - `GET /v1/training/venues/:venue_id/readiness`: Computes venue operational readiness percentage and lists any missing role-specific certifications.
 3. **Pilot Launch KPIs and Go/No-Go Decision Engine**:
-   - `GET /v1/dashboard/venues/:venue_id/pilot-metrics`: Queries production database tables to compute live KPIs (booking conversion rate, double-booking rate strictly 0.0%, unresolved payment mismatches, split payment success rate, no-show rate, menu attachment rate, and QR check-in success rate).
-   - `GET /v1/dashboard/venues/:venue_id/go-no-go`: Evaluates all 7 launch readiness gates (Publication Status, Active Layout Revision, Available Bookable Resources, 7-Day Operating Schedules, Default Cancellation/Deposit Policy, Base Pricing Rule, and 100% Staff Training Certification). Computes overall `DECISION: GO` or `NO_GO`.
+   - `GET /v1/dashboard/venues/:venue_id/pilot-metrics`: Derives booking/hold conversion, no-show rate, menu attachment, booking count, and the sum of booking totals labeled revenue from database queries. The implementation returns fixed values for double-booking rate (0), unresolved mismatches (0), split success (100), QR success (100), and median staff intake (4). These constants do not measure actual outcomes and are gaps; the QR query does not change the returned constant.
+   - `GET /v1/dashboard/venues/:venue_id/go-no-go`: Evaluates seven checks: publication, active layout, available bookable equipment, overlapping active claims, flagged reconciliation reports, staff training, and a default policy profile. The overlap query is database-wide, and absence of flagged reports does not establish that reconciliation is complete. Its `GO` or `NO_GO` is limited to these checks and is not the complete launch decision.
+
+The canonical release criteria also require critical tests, financial reconciliation and demonstrated payment/refund flows, legal/fiscal/privacy and store approvals, and real venue operational validation. A `GO` from the endpoint does not establish those conditions or grant launch approval.
 
 ## 2. Database Schema Extensions
 - `migrations/0032_runbooks_and_training.sql`:
@@ -43,13 +46,13 @@ Implements:
 
 ## 3. Domain Invariants & Rules
 1. **Double-Booking Physical Squatting Invariant**:
-   - PostgreSQL GiST exclusion constraint (`tsrange` overlap) physically prevents multiple overlapping confirmed claims on the same resource. Runbook R1 formally diagnoses customer complaints as physical squatting rather than system overlap.
+   - The GiST exclusion constraint is intended to prevent overlapping active claims on the same resource. R1 investigates claims and physical occupancy; an allegation must not automatically be diagnosed as squatting.
 2. **Strict App-Only Contingency Invariant**:
    - Staff cannot manually construct out-of-band bookings during network degradation; all bookings must originate through signed client app holds and bookings.
 3. **Orphan Payment Protection**:
    - Every captured payment intent lacking booking associations can be compensated via idempotent refund.
 4. **Go/No-Go Gate Rigor**:
-   - Launch requires all 7 operational gates to pass simultaneously with zero blocking violations.
+   - The endpoint evaluates its 7 operational checks. Full launch acceptance also requires the canonical release criteria above.
 
 ## 4. API Endpoints
 - `GET /v1/runbooks/r1-double-booking-audit`
@@ -65,13 +68,4 @@ Implements:
 - `GET /v1/dashboard/venues/:venue_id/go-no-go`
 
 ## 5. Acceptance Verification Plan
-Automated integration test suite `tests/eng506-runbooks-training-and-pilot.spec.ts`:
-- Proves Runbook R1 audits double-booking allegation and identifies physical squatting.
-- Proves Runbook R2 resolves orphan captured PSP payment with compensating refund.
-- Proves Runbook R3 reconciles daily receivables against online + offline collections.
-- Proves Runbook R4 diagnoses venue publish readiness and counts resources.
-- Proves Runbook R5 surfaces strict app-only contingency protocols.
-- Proves Runbook R6 deactivates out-of-stock SKU and refunds pending order items.
-- Proves curriculum delivery and staff role certification tracking.
-- Proves pilot live KPI computation from real database tables.
-- Proves evaluation of all 7 Go/No-Go release gates.
+The existing automated integration test file [`tests/eng506-runbooks-training-and-pilot.spec.ts`](../tests/eng506-runbooks-training-and-pilot.spec.ts) describes coverage of runbook behavior, training and certifications, pilot metrics, and the endpoint's checks. The file's presence does not verify those behaviors or the complete release criteria. Tests were not run in this documentation review; verify the relevant cases and the measurement gaps above before relying on the results.

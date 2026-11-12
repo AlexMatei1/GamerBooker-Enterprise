@@ -9,6 +9,7 @@ import type {
   CreateAdjacencyDto,
   SuggestedAdjacency,
   PrivateRoomCompositionDetail,
+  ResourcePricingSummary,
   UpdateCompositionDto,
 } from './inspector.types';
 
@@ -24,6 +25,34 @@ function conflict(code: string, message: string, details?: Record<string, unknow
   return new AuthHttpError(HttpStatus.CONFLICT, code, message, details);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  const parsed = parseJsonValue(value);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+
 @Injectable()
 export class InspectorService {
   // ---------------------------------------------------------------------------
@@ -33,8 +62,23 @@ export class InspectorService {
   async getResourceInspector(venueId: string, resourceId: string): Promise<ResourceInspectorDetail> {
     const pool = getPool();
 
+    type ResourceInspectorRow = {
+      id: string;
+      venue_id: string;
+      name: string;
+      type: 'PC' | 'CONSOLE_SETUP' | 'PRIVATE_ROOM';
+      status: string;
+      bookable: boolean;
+      attributes: unknown;
+      room_id: string | null;
+      room_name: string | null;
+      zone_id: string | null;
+      zone_name: string | null;
+      zone_policy_profile_id: string | null;
+    };
+
     // 1. Fetch resource metadata with room and zone
-    const res = await pool.query<any>(
+    const res = await pool.query<ResourceInspectorRow>(
       `SELECT r.id, r.venue_id, r.name, r.type, r.status, r.bookable, r.attributes,
               r.room_id, rm.name as room_name,
               r.zone_id, zn.name as zone_name, zn.policy_profile_id as zone_policy_profile_id
@@ -71,9 +115,9 @@ export class InspectorService {
       [venueId, resourceId, row.zone_id],
     );
 
-    let pricing = {
+    let pricing: ResourcePricingSummary = {
       hourly_rate_minor: 2000,
-      source: 'PLATFORM_DEFAULT' as const,
+      source: 'PLATFORM_DEFAULT',
       currency: 'RON',
     };
 
@@ -81,7 +125,7 @@ export class InspectorService {
       const p = pricingRes.rows[0];
       pricing = {
         hourly_rate_minor: Number(p.hourly_rate_minor),
-        source: p.target_type as any,
+        source: p.target_type as ResourcePricingSummary['source'],
         currency: p.currency,
       };
     }
@@ -89,10 +133,10 @@ export class InspectorService {
     // 3. Resolve Effective Policy Profile
     let policyProfileId = row.zone_policy_profile_id;
     let policyProfileName: string | null = null;
-    let policySettings: any = null;
+    let policySettings: unknown = null;
 
     if (policyProfileId) {
-      const profRes = await pool.query<{ name: string; settings: any }>(
+      const profRes = await pool.query<{ name: string; settings: unknown }>(
         'SELECT name, settings FROM policy_profiles WHERE id = $1',
         [policyProfileId],
       );
@@ -104,7 +148,7 @@ export class InspectorService {
 
     if (!policySettings) {
       // Fetch default policy profile for venue
-      const defProf = await pool.query<{ id: string; name: string; settings: any }>(
+      const defProf = await pool.query<{ id: string; name: string; settings: unknown }>(
         'SELECT id, name, settings FROM policy_profiles WHERE venue_id = $1 AND is_default = true LIMIT 1',
         [venueId],
       );
@@ -115,18 +159,31 @@ export class InspectorService {
       }
     }
 
-    const parsedPolicy = typeof policySettings === 'string' ? JSON.parse(policySettings) : policySettings;
+    const parsedPolicy: unknown = typeof policySettings === 'string' ? JSON.parse(policySettings) : policySettings;
     const policy = {
       profile_id: policyProfileId || null,
       profile_name: policyProfileName || null,
-      cancellation_cutoff_hours: parsedPolicy?.cancellation_cutoff_hours ?? 3,
-      deposit_percentage: parsedPolicy?.deposit_percentage ?? 100,
-      min_duration_minutes: parsedPolicy?.min_duration_minutes ?? 60,
-      max_duration_minutes: parsedPolicy?.max_duration_minutes ?? 480,
+      cancellation_cutoff_hours: asNumber(asRecord(parsedPolicy).cancellation_cutoff_hours) ?? 3,
+      deposit_percentage: asNumber(asRecord(parsedPolicy).deposit_percentage) ?? 100,
+      min_duration_minutes: asNumber(asRecord(parsedPolicy).min_duration_minutes) ?? 60,
+      max_duration_minutes: asNumber(asRecord(parsedPolicy).max_duration_minutes) ?? 480,
     };
 
     // 4. Resolve Composition (children & parents)
-    const childRes = await pool.query<any>(
+    type ChildRow = {
+      id: string;
+      name: string;
+      type: string;
+      status: string;
+      bookable: boolean;
+    };
+    type ParentRow = {
+      id: string;
+      name: string;
+      type: string;
+    };
+
+    const childRes = await pool.query<ChildRow>(
       `SELECT r.id, r.name, r.type, r.status, r.bookable
        FROM resource_components rc
        JOIN resources r ON r.id = rc.child_resource_id
@@ -135,7 +192,7 @@ export class InspectorService {
       [resourceId],
     );
 
-    const parentRes = await pool.query<any>(
+    const parentRes = await pool.query<ParentRow>(
       `SELECT r.id, r.name, r.type
        FROM resource_components rc
        JOIN resources r ON r.id = rc.parent_resource_id
@@ -145,7 +202,15 @@ export class InspectorService {
     );
 
     // 5. Resolve Adjacencies
-    const adjRes = await pool.query<any>(
+    type AdjacencyRow = {
+      edge_id: string;
+      distance_metric: string | number;
+      neighbor_resource_id: string;
+      neighbor_name: string;
+      neighbor_type: string;
+    };
+
+    const adjRes = await pool.query<AdjacencyRow>(
       `SELECT ra.id as edge_id, ra.distance_metric,
               CASE WHEN ra.resource_a_id = $1 THEN r2.id ELSE r1.id END as neighbor_resource_id,
               CASE WHEN ra.resource_a_id = $1 THEN r2.name ELSE r1.name END as neighbor_name,
@@ -217,7 +282,15 @@ export class InspectorService {
       }
       const tenantId = venueCheck.rows[0].tenant_id;
 
-      const currentRes = await client.query<any>(
+      const currentRes = await client.query<{
+        id: string;
+        name: string;
+        room_id: string | null;
+        zone_id: string | null;
+        status: string;
+        bookable: boolean;
+        attributes: unknown;
+      }>(
         'SELECT * FROM resources WHERE id = $1 AND venue_id = $2 FOR UPDATE',
         [resourceId, venueId],
       );
@@ -338,7 +411,18 @@ export class InspectorService {
 
   async listAdjacencies(venueId: string): Promise<AdjacencyEdgeItem[]> {
     const pool = getPool();
-    const res = await pool.query<any>(
+    type AdjacencyEdgeRow = {
+      id: string;
+      venue_id: string;
+      resource_a_id: string;
+      resource_a_name: string;
+      resource_b_id: string;
+      resource_b_name: string;
+      distance_metric: string | number;
+      created_at: string | Date;
+    };
+
+    const res = await pool.query<AdjacencyEdgeRow>(
       `SELECT ra.id, ra.venue_id, ra.resource_a_id, r1.name as resource_a_name,
               ra.resource_b_id, r2.name as resource_b_name, ra.distance_metric, ra.created_at
        FROM resource_adjacencies ra
@@ -398,7 +482,6 @@ export class InspectorService {
         throw notFound('RESOURCE_NOT_FOUND', 'One or both resources do not exist in this venue');
       }
 
-      // Order pair lexicographically to satisfy CHECK (resource_a_id < resource_b_id)
       const [minId, maxId] =
         dto.resource_a_id < dto.resource_b_id
           ? [dto.resource_a_id, dto.resource_b_id]
@@ -406,7 +489,14 @@ export class InspectorService {
 
       const distance = Math.max(1, dto.distance_metric || 1);
 
-      const insRes = await client.query<any>(
+      const insRes = await client.query<{
+        id: string;
+        venue_id: string;
+        resource_a_id: string;
+        resource_b_id: string;
+        distance_metric: string | number;
+        created_at: string | Date;
+      }>(
         `INSERT INTO resource_adjacencies (
           venue_id, resource_a_id, resource_b_id, distance_metric
         ) VALUES ($1, $2, $3, $4)
@@ -529,7 +619,7 @@ export class InspectorService {
     const pool = getPool();
 
     // 1. Fetch layout draft
-    const draftRes = await pool.query<{ nodes: any }>(
+    const draftRes = await pool.query<{ nodes: unknown }>(
       'SELECT nodes FROM layout_drafts WHERE venue_id = $1',
       [venueId],
     );
@@ -538,13 +628,12 @@ export class InspectorService {
       return [];
     }
 
-    const rawNodes = draftRes.rows[0].nodes;
-    const nodes = typeof rawNodes === 'string' ? JSON.parse(rawNodes) : rawNodes;
+    const rawNodes = parseJsonValue(draftRes.rows[0].nodes);
 
     // Filter resource nodes with valid resource_id
-    const resourceNodes = (nodes || []).filter(
-      (n: any) => n.kind === 'RESOURCE' && n.resource_id,
-    );
+    const resourceNodes: Array<Record<string, unknown>> = Array.isArray(rawNodes)
+      ? rawNodes.map((n) => asRecord(n)).filter((n) => n.kind === 'RESOURCE' && n.resource_id)
+      : [];
 
     // 2. Load existing adjacencies
     const existingAdj = await pool.query<{ resource_a_id: string; resource_b_id: string }>(
@@ -568,30 +657,30 @@ export class InspectorService {
           continue;
         }
 
-        const dx = (n1.x + (n1.w || 60) / 2) - (n2.x + (n2.w || 60) / 2);
-        const dy = (n1.y + (n1.h || 40) / 2) - (n2.y + (n2.h || 40) / 2);
+        const dx = (asNumber(n1.x) || 0) + ((asNumber(n1.w) || 60) / 2) - ((asNumber(n2.x) || 0) + ((asNumber(n2.w) || 60) / 2));
+        const dy = (asNumber(n1.y) || 0) + ((asNumber(n1.h) || 40) / 2) - ((asNumber(n2.y) || 0) + ((asNumber(n2.h) || 40) / 2));
         const dist = Math.round(Math.sqrt(dx * dx + dy * dy));
 
         if (dist <= maxProximity) {
           const [minId, maxId] =
-            n1.resource_id < n2.resource_id
+            (n1.resource_id as string) < (n2.resource_id as string)
               ? [n1.resource_id, n2.resource_id]
               : [n2.resource_id, n1.resource_id];
 
-          const [minName, maxName] =
-            n1.resource_id < n2.resource_id ? [n1.label, n2.label] : [n2.label, n1.label];
+          const minName = (n1.resource_id as string) < (n2.resource_id as string) ? n1.label : n2.label;
+          const maxName = (n1.resource_id as string) < (n2.resource_id as string) ? n2.label : n1.label;
 
           const alreadyAdj = existingSet.has(`${minId}:${maxId}`);
           const metric = dist <= 90 ? 1 : dist <= 140 ? 2 : 3;
 
           suggestions.push({
-            resource_a_id: minId,
-            resource_a_name: minName || 'Station A',
-            resource_b_id: maxId,
-            resource_b_name: maxName || 'Station B',
+            resource_a_id: minId as string,
+            resource_a_name: (minName || 'Station A') as string,
+            resource_b_id: maxId as string,
+            resource_b_name: (maxName || 'Station B') as string,
             euclidean_distance: dist,
             suggested_distance_metric: metric,
-            room_id: n1.room_id,
+            room_id: n1.room_id as string,
             already_adjacent: alreadyAdj,
           });
         }
@@ -624,7 +713,7 @@ export class InspectorService {
       throw badRequest('INVALID_RESOURCE_TYPE', `Resource "${parent.name}" is not a PRIVATE_ROOM.`);
     }
 
-    const compRes = await pool.query<any>(
+    const compRes = await pool.query<{ id: string; name: string; type: string; status: string; bookable: boolean }>(
       `SELECT r.id, r.name, r.type, r.status, r.bookable
        FROM resource_components rc
        JOIN resources r ON r.id = rc.child_resource_id

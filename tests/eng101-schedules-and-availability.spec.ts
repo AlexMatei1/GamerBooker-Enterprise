@@ -40,6 +40,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -51,7 +52,7 @@ describe('ENG-101 Schedules, Exception Calendar, and Availability Engine', () =>
   let foreignFixture: Fixture;
 
   beforeAll(async () => {
-    app = await startTestApp('eng101');
+    app = await startTestApp('eng101', { browserClient: true });
     ownerFixture = await createTenantAndVenue(app, 'Alpha Esports SRL', 'Arena Central', 'OWNER');
     foreignFixture = await createTenantAndVenue(app, 'Beta Gaming SRL', 'Beta Lounge', 'OWNER');
   });

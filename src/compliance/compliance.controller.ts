@@ -1,4 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { SessionGuard } from '../auth/session.guard';
+import { RequireVenueRole, VenueRoleGuard } from '../auth/venue-role.guard';
 import { ComplianceService } from './compliance.service';
 import type { ComplianceManifest, VenueFiscalStatus } from './compliance.types';
 
@@ -17,6 +19,8 @@ export class ComplianceController {
   }
 
   @Get('venues/:venue_id/fiscal-status')
+  @UseGuards(SessionGuard, VenueRoleGuard)
+  @RequireVenueRole('OWNER','VENUE_MANAGER')
   async getVenueFiscalStatus(
     @Param('venue_id') venueId: string,
   ): Promise<VenueFiscalStatus> {

@@ -198,8 +198,8 @@ export class MfaService {
       );
       await client.query(
         'INSERT INTO sessions' +
-          ' (user_id, token_hash, kind, mfa_state, idle_expires_at, absolute_expires_at)' +
-          " VALUES ($1, $2, $3, 'active', $4, $5)",
+          ' (user_id, token_hash, kind, mfa_state, idle_expires_at, absolute_expires_at, mfa_verified_at)' +
+          " VALUES ($1, $2, $3, 'active', $4, $5, now())",
         [principal.userId, minted.hash, principal.kind, idleExpiresAt, absoluteExpiresAt],
       );
       await writeAudit(

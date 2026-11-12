@@ -1,0 +1,211 @@
+{
+  "checks": [
+    {
+      "name": "Ledger heading explicitly local illustrative/no reconciliation",
+      "result": "PASS"
+    },
+    {
+      "name": "Void dialog and PIN explicitly demonstration",
+      "result": "PASS"
+    },
+    {
+      "name": "Void outcome only local; booking and financial balances unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "Misleading financial completion headings absent",
+      "result": "PASS"
+    },
+    {
+      "name": "Runbooks explicitly no database audit/refund/reconciliation",
+      "result": "PASS"
+    },
+    {
+      "name": "R1 outcome states preset illustration without findings/database access",
+      "result": "PASS"
+    },
+    {
+      "name": "R2 result explicitly no real refund or reconciliation",
+      "result": "PASS"
+    },
+    {
+      "name": "Misleading audit/refund completion claims absent",
+      "result": "PASS"
+    },
+    {
+      "name": "Observed ledger void/runbooks audit/refund network POST count",
+      "result": "PASS",
+      "count": 0,
+      "posts": []
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/@vite/client"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/main.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/@react-refresh"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/vite/dist/client/env.mjs"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react-dom_client.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/App.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/styles/theme.css"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/chunk-2YIMICFJ.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/Header.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/LiveFloorView.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/LayoutBuilder.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/BarBoard.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/PricingPolicies.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/FinancialLedger.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/OperationsRunbooks.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/CommandPalette.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/lucide-react.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/api/client.ts"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/services/realtime.ts"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/InteractiveFloorMap.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/live-floor"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/checkin-queue"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/live-floor"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/checkin-queue"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/favicon.ico"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/reconciliation/daily?date=2026-11-05"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/reconciliation/daily?date=2026-11-05"
+    },
+    {
+      "method": "GET",
+      "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNSIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSJXaW5kb3dUZXh0IiBkPSJNMjAgM2gtMVYxaC0ydjJIN1YxSDV2Mkg0Yy0xLjEgMC0yIC45LTIgMnYxNmMwIDEuMS45IDIgMiAyaDE2YzEuMSAwIDItLjkgMi0yVjVjMC0xLjEtLjktMi0yLTJ6bTAgMThINFY4aDE2djEzeiIvPjxwYXRoIGZpbGw9Im5vbmUiIGQ9Ik0wIDBoMjR2MjRIMHoiLz48L3N2Zz4="
+    }
+  ],
+  "screenshots": [
+    {
+      "filename": "correction2-ledger.png",
+      "url": "http://127.0.0.1:5173",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "method": "Existing Chrome headless CDP Page.captureScreenshot; actual rendered local UI; unedited PNG"
+    },
+    {
+      "filename": "correction2-void-dialog.png",
+      "url": "http://127.0.0.1:5173",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "method": "Existing Chrome headless CDP Page.captureScreenshot; actual rendered local UI; unedited PNG"
+    },
+    {
+      "filename": "correction2-void-outcome.png",
+      "url": "http://127.0.0.1:5173",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "method": "Existing Chrome headless CDP Page.captureScreenshot; actual rendered local UI; unedited PNG"
+    },
+    {
+      "filename": "correction2-audit-refund-outcomes.png",
+      "url": "http://127.0.0.1:5173",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "method": "Existing Chrome headless CDP Page.captureScreenshot; actual rendered local UI; unedited PNG"
+    }
+  ],
+  "priorEvidence": "Correction1 21 web/9 native checks were not rerun in this copy-only round."
+}

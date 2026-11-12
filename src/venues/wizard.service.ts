@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
-import type { VenueRole } from '../auth/membership.service';
+import { VENUE_ROLES, type VenueRole } from '../auth/membership.service';
 import type {
   PublishGatesResult,
   StaffInvitationCreatedResult,
@@ -298,6 +298,7 @@ export class WizardService {
     email: string,
     role: VenueRole,
   ): Promise<StaffInvitationCreatedResult> {
+    if (!VENUE_ROLES.includes(role)) throw badRequest('VALIDATION_FAILED','Invalid venue role');
     const cleanEmail = (email ?? '').trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       throw badRequest('VALIDATION_FAILED', 'A valid email address is required');
@@ -497,33 +498,44 @@ export class WizardService {
     const tokenHash = createHash('sha256').update(rawToken.trim()).digest();
     const pool = getPool();
 
-    const findRes = await pool.query<StaffInvitationRow>(
-      'SELECT * FROM staff_invitations WHERE token_hash = $1',
-      [tokenHash],
-    );
-    if (findRes.rowCount === 0) {
-      throw notFound('Invitation not found or invalid token');
-    }
-
-    const inv = findRes.rows[0];
-
-    if (inv.status === 'ACCEPTED') {
-      throw badRequest('INVITATION_ALREADY_USED', 'This invitation has already been accepted');
-    }
-    if (inv.status === 'REVOKED') {
-      throw badRequest('INVITATION_REVOKED', 'This invitation has been revoked');
-    }
-    if (new Date() > new Date(inv.expires_at)) {
-      await pool.query("UPDATE staff_invitations SET status = 'EXPIRED', updated_at = now() WHERE id = $1", [inv.id]);
-      throw badRequest('INVITATION_EXPIRED', 'This invitation has expired');
-    }
-    if (inv.status !== 'PENDING') {
-      throw badRequest('INVITATION_NOT_PENDING', `Invitation is in ${inv.status} state`);
-    }
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const findRes = await client.query<StaffInvitationRow>(
+        'SELECT * FROM staff_invitations WHERE token_hash=$1 FOR UPDATE', [tokenHash]);
+      const inv = findRes.rows[0];
+      if (!inv) throw notFound('Invitation not found or unavailable');
+      if (inv.status === 'ACCEPTED') {
+        throw badRequest('INVITATION_ALREADY_USED', 'This invitation has already been accepted');
+      }
+      if (inv.status === 'REVOKED') {
+        throw badRequest('INVITATION_REVOKED', 'This invitation has been revoked');
+      }
+      if (new Date(inv.expires_at).getTime() <= Date.now()) {
+        // This row is locked by the current transaction, so the marker must be
+        // written through `client`. A second connection would block on our own
+        // lock forever. COMMIT it, then throw: the expiry is real state.
+        await client.query(
+          "UPDATE staff_invitations SET status = 'EXPIRED', updated_at = now() WHERE id = $1 AND status = 'PENDING'",
+          [inv.id],
+        );
+        await client.query('COMMIT');
+        throw badRequest('INVITATION_EXPIRED', 'This invitation has expired');
+      }
+      if (inv.status !== 'PENDING') {
+        throw badRequest('INVITATION_NOT_PENDING', `Invitation is in ${inv.status} state`);
+      }
+      if (!VENUE_ROLES.includes(inv.role)) {
+        throw notFound('Invitation not found or unavailable');
+      }
+      const user = await client.query(
+        `SELECT 1 FROM users WHERE id=$1 AND lower(email)=lower($2)
+         AND email_verified_at IS NOT NULL AND identity_status='verified' AND deleted_at IS NULL`, [userId,inv.email]);
+      if (!user.rowCount) throw notFound('Invitation not found or unavailable');
+      const admin = await client.query('SELECT 1 FROM platform_grants WHERE user_id=$1 AND revoked_at IS NULL',[userId]);
+      if (admin.rowCount) throw forbidden('AUTH_ROLE_NOT_PERMITTED','Administrator accounts cannot accept venue invitations');
+      const venue = await client.query('SELECT 1 FROM venues WHERE id=$1 AND tenant_id=$2',[inv.venue_id,inv.tenant_id]);
+      if (!venue.rowCount) throw notFound();
 
       // Mark invitation accepted
       await client.query(

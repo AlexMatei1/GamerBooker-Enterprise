@@ -54,7 +54,7 @@ describe('ENG002-T04 second factor lifecycle', () => {
   let acceptedCode: string;
 
   beforeAll(async () => {
-    app = await startTestApp('t04mfa');
+    app = await startTestApp('t04mfa', { browserClient: true });
     const user = await app.verifiedUser();
     email = user.email;
     userId = user.userId;
@@ -313,7 +313,7 @@ describe('ENG002-T04 the gate follows the role, not the login moment', () => {
   let app: TestApp;
 
   beforeAll(async () => {
-    app = await startTestApp('t04gate');
+    app = await startTestApp('t04gate', { browserClient: true });
   }, 60000);
 
   afterAll(async () => {

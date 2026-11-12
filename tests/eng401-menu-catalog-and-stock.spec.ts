@@ -1,4 +1,21 @@
 import { TestApp, startTestApp } from './support/auth-harness';
+import { base32Decode, hotp, timeStepAt } from '../src/auth/totp';
+
+const MFA_SECRET = 'JBSWY3DPEHPK3PXP';
+
+/**
+ * Completes the TOTP second factor for a fixture user and returns the rotated
+ * session cookie. Fixtures may not skip the gate: a membership-only session is
+ * pending and the guard refuses gated roles (ENG-002 T-04).
+ */
+async function elevateMfa(app: TestApp, cookie: string, secret: string): Promise<string> {
+  const res = await app.call('POST', '/v1/auth/mfa/verify', {
+    headers: { cookie, 'x-gamerbooker-csrf': '1' },
+    body: { code: hotp(base32Decode(secret), timeStepAt(Date.now())) },
+  });
+  expect(res.status).toBe(200);
+  return app.cookieOf(res);
+}
 
 interface Fixture {
   userId: string;
@@ -31,10 +48,13 @@ async function createVenueWithRoles(
   );
   await app.db.query(
     'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-      " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
+      " VALUES ($1, 'totp', pgp_sym_encrypt($2, 'test-mfa-key-0123456789abcdef0123456789'), now())" +
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-    [ownerUser.userId],
+    [ownerUser.userId, MFA_SECRET],
   );
+  // Writing the factor row alone leaves the session pending; a gated role must
+  // actually complete the second factor (ENG-002 T-04).
+  ownerUser.cookie = await elevateMfa(app, ownerUser.cookie, MFA_SECRET);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -44,10 +64,13 @@ async function createVenueWithRoles(
   );
   await app.db.query(
     'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-      " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
+      " VALUES ($1, 'totp', pgp_sym_encrypt($2, 'test-mfa-key-0123456789abcdef0123456789'), now())" +
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-    [managerUser.userId],
+    [managerUser.userId, MFA_SECRET],
   );
+  // Writing the factor row alone leaves the session pending; a gated role must
+  // actually complete the second factor (ENG-002 T-04).
+  managerUser.cookie = await elevateMfa(app, managerUser.cookie, MFA_SECRET);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -72,7 +95,7 @@ describe('ENG-401 Consumables Menu Catalog, Pricing, Stock & Asset Management', 
   let customerUser: { cookie: string; userId: string };
 
   beforeAll(async () => {
-    app = await startTestApp('eng401');
+    app = await startTestApp('eng401', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Cyber Cafe SRL', 'Cyber Arena Iasi');
     otherVenueFixtures = await createVenueWithRoles(app, 'Other SRL', 'Other Bar Brasov');
     customerUser = await app.verifiedUser();

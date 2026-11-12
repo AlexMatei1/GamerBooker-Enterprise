@@ -49,7 +49,7 @@ export interface SceneNode {
   resource_id?: string;
   label?: string;
   color?: string;
-  custom_props?: Record<string, any>;
+  custom_props?: Record<string, unknown>;
 }
 
 export interface LayoutDraft {
@@ -61,7 +61,7 @@ export interface LayoutDraft {
   rooms: SceneRoom[];
   layers: SceneLayer[];
   nodes: SceneNode[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   updated_by: string | null;
@@ -73,7 +73,7 @@ export interface UpdateDraftDto {
   rooms?: SceneRoom[];
   layers?: SceneLayer[];
   nodes?: SceneNode[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export type PresetTemplateType =

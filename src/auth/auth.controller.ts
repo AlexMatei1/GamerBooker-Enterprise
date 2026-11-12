@@ -24,8 +24,10 @@ import {
   RateLimiter,
   VERIFY_ADDRESS_LIMIT,
 } from './rate-limit';
-import { SessionGuard } from './session.guard';
+import { AllowPendingMfa, SessionGuard } from './session.guard';
+import { assertCookieMutation } from './csrf';
 import {
+  validateChangePassword,
   validateDeleteAccount,
   validateLogin,
   validateRegister,
@@ -66,6 +68,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<unknown> {
     const input = parse(() => validateLogin(body));
+    if (input.kind === 'dashboard') assertCookieMutation(req);
 
     // Two buckets. The address bucket bounds spraying one password across many
     // identities; the identity bucket bounds guessing against one account.
@@ -77,7 +80,7 @@ export class AuthController {
 
     let result;
     try {
-      result = await this.auth.login(input);
+      result = await this.auth.login(input, req);
     } catch (err) {
       if (err instanceof AuthHttpError && err.code === 'AUTH_INVALID_CREDENTIALS') {
         this.limiter.record(LOGIN_FAILURE_LIMIT, identityKey);
@@ -95,6 +98,7 @@ export class AuthController {
     // Dashboard sessions live in an HttpOnly cookie and the token is never
     // returned to JavaScript. Mobile clients get the token in the body.
     const mfa = {
+      ...(result.localAdminPasswordOnly ? {auth_mode: 'local_admin_password'} : {}),
       mfa_required: result.mfaState === 'pending',
       mfa_enrollment_required: result.mfaEnrollmentRequired,
     };
@@ -121,6 +125,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(SessionGuard)
+  @AllowPendingMfa()
   async logout(
     @Req() req: AuthedRequest,
     @Res({ passthrough: true }) res: Response,
@@ -142,6 +147,20 @@ export class AuthController {
   ): Promise<void> {
     await this.auth.logoutAll(req.auth as SessionPrincipal);
     res.setHeader('Set-Cookie', clearedCookie());
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @AllowPendingMfa()
+  async changePassword(
+    @Req() req: AuthedRequest,
+    @Body() body: unknown,
+  ): Promise<{ status: string; message: string }> {
+    const principal = req.auth as SessionPrincipal;
+    const input = parse(() => validateChangePassword(body));
+    await this.auth.changePassword(principal, input.currentPassword, input.newPassword);
+    return { status: 'ok', message: 'Parola a fost modificată cu succes.' };
   }
 
 

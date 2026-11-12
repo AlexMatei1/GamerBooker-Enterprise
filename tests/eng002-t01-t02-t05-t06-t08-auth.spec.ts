@@ -36,7 +36,7 @@ const cookieOf = (res: ApiResponse): string => app.cookieOf(res);
 const verifiedUser = () => app.verifiedUser();
 
 beforeAll(async () => {
-  app = await startTestApp('slicea');
+  app = await startTestApp('slicea', { browserClient: true });
   db = app.db;
 }, 120000);
 

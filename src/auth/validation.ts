@@ -210,3 +210,21 @@ function isDeleteReason(value: string): value is (typeof DELETE_REASONS)[number]
   return (DELETE_REASONS as readonly string[]).includes(value);
 }
 
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export function validateChangePassword(body: unknown): ChangePasswordInput {
+  const issues: FieldIssue[] = [];
+  const record = asRecord(body);
+  const currentPassword = typeof record.current_password === 'string' ? record.current_password : '';
+  if (currentPassword.length === 0) {
+    issues.push({ field: 'current_password', kind: 'required' });
+  }
+  const newPassword = checkPassword(record.new_password, issues);
+  throwIf(issues);
+  return { currentPassword, newPassword };
+}
+
+

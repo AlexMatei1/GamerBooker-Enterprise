@@ -52,6 +52,15 @@ class StationItem {
   });
 }
 
+class PreviewBooking {
+  final MobileVenue venue;
+  final StationItem station;
+  final int durationHours;
+  const PreviewBooking({required this.venue, required this.station, required this.durationHours});
+  int get totalBani => station.hourlyRate * durationHours;
+  int get depositBani => (totalBani * 40 + 50) ~/ 100;
+}
+
 class BarMenuItem {
   final String id;
   final String name;

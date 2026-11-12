@@ -80,7 +80,7 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
   let pc3Id: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng302');
+    app = await startTestApp('eng302', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Pulse Gaming SRL', 'Pulse Arena Cluj');
 
     organizer = await app.verifiedUser();
@@ -367,6 +367,7 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
 
     it('keeps group in PENDING_PAYMENTS when only first participant pays', async () => {
       const captureRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: piOrgRef },
       });
 
@@ -391,6 +392,7 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
 
       // Re-send capture for organizer
       const captureRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: piOrgRef },
       });
 
@@ -406,11 +408,13 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
     it('atomically confirms booking when all participants finish paying', async () => {
       // Participant 1 pays
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant1.cookie },
         body: { provider_ref: pi1Ref },
       });
 
       // Participant 2 pays (final share)
       const finalCapture = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant2.cookie },
         body: { provider_ref: pi2Ref },
       });
 
@@ -486,9 +490,11 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
 
       // Capture payments for organizer and participant 1
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: piOrgRef },
       });
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant1.cookie },
         body: { provider_ref: pi1Ref },
       });
     });
@@ -579,6 +585,7 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
 
     it('rejects resurrecting expired group booking and immediately refunds late capture', async () => {
       const res = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant1.cookie },
         body: { provider_ref: latePiRef },
       });
 
@@ -644,6 +651,7 @@ describe('ENG-302 Group Booking Payments, Completion Checks & Timeout Compensati
 
       // Capture organizer's payment
       const captureRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: pi.provider_ref },
       });
       expect(captureRes.status).toBe(200);

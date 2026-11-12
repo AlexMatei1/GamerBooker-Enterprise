@@ -16,12 +16,15 @@ import type { SessionPrincipal } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
 import { RequireVenueRole, VenueRoleGuard } from '../auth/venue-role.guard';
 import { OrdersService } from './orders.service';
+import { PaymentsService } from '../payments/payments.service';
 import type {
   ValidateCartInput,
   CheckoutOrderInput,
   OrderFilterQuery,
   RefuseAgeInput,
   CancelUnavailableItemInput,
+  FulfillmentMode,
+  OrderStatus,
 } from './orders.types';
 
 interface AuthedRequest extends Request {
@@ -30,7 +33,10 @@ interface AuthedRequest extends Request {
 
 @Controller()
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   // ===========================================================================
   // Customer Cart & Checkout Endpoints (/v1/orders)
@@ -67,13 +73,26 @@ export class OrdersController {
 
   @Post('orders/payments/capture')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
   async captureOrderPayment(
     @Body() body: { provider_ref: string },
+    @Req() req: AuthedRequest,
     @Headers('x-request-id') requestId?: string,
   ) {
     if (!body?.provider_ref) {
       throw new Error('MISSING_PROVIDER_REF');
     }
+    const customerId = req.auth?.userId;
+    if (!customerId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    // Sandbox-only shim: the PSP must report the capture and the caller must own
+    // the intent. A real PSP capture reaches the order through the signed
+    // webhook registered on PaymentsService, never through a client request.
+    await this.paymentsService.assertProviderCaptured(
+      body.provider_ref,
+      customerId,
+    );
     return this.ordersService.handleOrderPaymentCaptured(body.provider_ref, requestId);
   }
 
@@ -192,8 +211,8 @@ export class OrdersController {
   @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
   async getBarBoard(
     @Param('venue_id') venueId: string,
-    @Query('fulfillment_mode') fulfillmentMode?: any,
-    @Query('status') status?: any,
+    @Query('fulfillment_mode') fulfillmentMode?: FulfillmentMode,
+    @Query('status') status?: OrderStatus,
   ) {
     return this.ordersService.getBarBoard(venueId, {
       fulfillment_mode: fulfillmentMode,

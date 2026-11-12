@@ -1,6 +1,6 @@
 # HANDOFF - ENG-005 PSP Integration Contract, Sandbox, and Webhook Replay Harness
 
-Status: proposed, ready for implementation.
+Historical status: proposed, ready for implementation. See the [2026-11-04 status inventory](HANDOFF-INDEX-2026-11-04.md) for the later assessment.
 Author: thinker (contract), recorded by the primary agent (scribe).
 Task source: docs/11-delivery/04-engineering-handoff-backlog.md:11 (ENG-005), critical path line 54.
 Roadmap: Milestone M0 Foundations (docs/11-delivery/01-implementation-roadmap.md:5-9).

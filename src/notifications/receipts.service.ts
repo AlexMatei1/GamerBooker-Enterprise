@@ -18,8 +18,12 @@ export class ReceiptsService {
       status: string;
       resource_ids: string[];
       package_id?: string | null;
-      price_snapshot: any;
-      policy_snapshot: any;
+      price_snapshot: {
+        total_minor?: number | string | null;
+        totalMinor?: number | string | null;
+        currency?: string | null;
+        items?: unknown[] | null;
+      } | null;
       starts_at: string;
       ends_at: string;
       created_at: string;

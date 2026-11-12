@@ -13,7 +13,7 @@ export interface RealtimeEventPayload {
   userId?: string;
   stationId?: string;
   timestamp: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 export interface BroadcastInput {
@@ -21,5 +21,5 @@ export interface BroadcastInput {
   venueId?: string;
   userId?: string;
   stationId?: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }

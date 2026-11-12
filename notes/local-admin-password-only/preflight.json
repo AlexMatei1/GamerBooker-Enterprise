@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-11-06T11:20:20.885Z",
+  "user_id": "561a11f5-2aa0-423f-84cf-dba27589c416",
+  "database": "gamerbooker_dev",
+  "role": "gamerbooker_app",
+  "users": 1,
+  "factors": 0,
+  "unrevoked_target_sessions": 1,
+  "grants": 1,
+  "cafe_memberships": 0,
+  "verified_active": true,
+  "mfa_key_file_modified": "2026-11-05T23:43:25.400Z"
+}

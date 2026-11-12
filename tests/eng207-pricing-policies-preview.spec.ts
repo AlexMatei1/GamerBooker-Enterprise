@@ -41,6 +41,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -55,7 +56,7 @@ describe('ENG-207 Pricing and Policy Customer Preview Engine', () => {
   let vipPcId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng207');
+    app = await startTestApp('eng207', { browserClient: true });
     owner = await createTenantAndVenue(app, 'Cyber Dome SRL', 'Cyber Dome Arena', 'OWNER');
 
     // Create Reception staff

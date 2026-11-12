@@ -1,0 +1,357 @@
+{
+  "checks": [
+    {
+      "name": "Nexus 50 RON/hour; 2h subtotal100",
+      "result": "PASS"
+    },
+    {
+      "name": "Nexus discount: deposit27 remaining70 total97",
+      "result": "PASS"
+    },
+    {
+      "name": "Abandoned pending checkout cannot resurrect pass/event",
+      "result": "PASS"
+    },
+    {
+      "name": "22+5 checkout shows next day03",
+      "result": "PASS"
+    },
+    {
+      "name": "Nexus midnight pass coherent",
+      "result": "PASS"
+    },
+    {
+      "name": "Extension updates next day04 and total300",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj selects own inventory only",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj checkout venue station60 and rate30",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj pass extension uses30 and21:00",
+      "result": "PASS"
+    },
+    {
+      "name": "Cart two RedBull+cola=37",
+      "result": "PASS"
+    },
+    {
+      "name": "Cart remove RedBull=23",
+      "result": "PASS"
+    },
+    {
+      "name": "Cart retained across tabs=23",
+      "result": "PASS"
+    },
+    {
+      "name": "Cancel dialog retains cart23",
+      "result": "PASS"
+    },
+    {
+      "name": "Confirmed order clears cart once",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj event cannot change Nexus attention",
+      "result": "PASS"
+    },
+    {
+      "name": "Same-origin local channel updates matching venue",
+      "result": "PASS"
+    },
+    {
+      "name": "Dashboard status event stays local",
+      "result": "PASS"
+    },
+    {
+      "name": "Dashboard simulated transition exercised",
+      "result": "PASS",
+      "button": "Prep →"
+    },
+    {
+      "name": "Financial copy has no fiscal certification",
+      "result": "PASS"
+    },
+    {
+      "name": "Runbook does not claim launch decision/refund dispatch",
+      "result": "PASS"
+    },
+    {
+      "name": "Booking/extension/support/order/dashboard simulation network POST count",
+      "result": "PASS",
+      "count": 0,
+      "posts": []
+    }
+  ],
+  "events": [
+    {
+      "type": "STATION_STATUS_CHANGED",
+      "venueId": "v-arena-bucharest-01",
+      "previewOnly": true
+    },
+    {
+      "type": "SESSION_EXTENDED",
+      "venueId": "v-arena-bucharest-01",
+      "previewOnly": true
+    },
+    {
+      "type": "STAFF_CALL",
+      "venueId": "v-arena-bucharest-01",
+      "previewOnly": true
+    },
+    {
+      "type": "STATION_STATUS_CHANGED",
+      "venueId": "v-cyber-cluj-02",
+      "previewOnly": true
+    },
+    {
+      "type": "SESSION_EXTENDED",
+      "venueId": "v-cyber-cluj-02",
+      "previewOnly": true
+    },
+    {
+      "type": "ORDER_CREATED",
+      "venueId": "v-cyber-cluj-02",
+      "previewOnly": true
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/@vite/client"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/main.tsx?t=1793846575248"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/@react-refresh"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/react.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/react-dom_client.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/App.tsx?t=1793846575248"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/styles/theme.css?t=1793846575248"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/vite/dist/client/env.mjs"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/chunk-2YIMICFJ.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/BottomNav.tsx?t=1793846301531"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/ExploreVenues.tsx?t=1793846301567"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/SeatPicker.tsx?t=1793846304870"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/BookingCheckout.tsx?t=1793846382194"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/ActivePassView.tsx?t=1793846382194"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/BarOrderingView.tsx?t=1793846304851"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/components/CustomerProfile.tsx?t=1793846301566"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/api/client.ts?t=1793846304770"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/utils/demoTime.ts"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/src/services/realtime.ts?t=1793846382194"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/node_modules/.vite/deps/lucide-react.js?v=54399a7d"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5174/favicon.ico"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/@vite/client"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/main.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/@react-refresh"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/react-dom_client.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/App.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/styles/theme.css?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/vite/dist/client/env.mjs"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/chunk-2YIMICFJ.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/Header.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/LiveFloorView.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/LayoutBuilder.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/BarBoard.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/PricingPolicies.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/FinancialLedger.tsx?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/OperationsRunbooks.tsx?t=1793846575369"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/CommandPalette.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/node_modules/.vite/deps/lucide-react.js?v=4a5b778c"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/api/client.ts?t=1793846575454"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/services/realtime.ts"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/src/components/InteractiveFloorMap.tsx"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/live-floor"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/checkin-queue"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/live-floor"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/checkin-queue"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/favicon.ico"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/bar-board"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/bar-board"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/reconciliation/daily?date=2026-11-05"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:5173/v1/dashboard/venues/v-arena-bucharest-01/reconciliation/daily?date=2026-11-05"
+    },
+    {
+      "method": "GET",
+      "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNSIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSJXaW5kb3dUZXh0IiBkPSJNMjAgM2gtMVYxaC0ydjJIN1YxSDV2Mkg0Yy0xLjEgMC0yIC45LTIgMnYxNmMwIDEuMS45IDIgMiAyaDE2YzEuMSAwIDItLjkgMi0yVjVjMC0xLjEtLjktMi0yLTJ6bTAgMThINFY4aDE2djEzeiIvPjxwYXRoIGZpbGw9Im5vbmUiIGQ9Ik0wIDBoMjR2MjRIMHoiLz48L3N2Zz4="
+    }
+  ]
+}

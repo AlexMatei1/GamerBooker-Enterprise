@@ -163,7 +163,7 @@ export class NotificationsService {
     const unreadOnly = query?.unread_only === true || String(query?.unread_only) === 'true';
 
     let filterSql = 'WHERE user_id = $1';
-    const params: any[] = [userId];
+    const params: unknown[] = [userId];
 
     if (unreadOnly) {
       filterSql += ' AND read = false';

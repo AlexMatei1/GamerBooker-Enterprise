@@ -1,4 +1,5 @@
-export type Screen = 'explore' | 'station' | 'checkout' | 'pass' | 'bar' | 'profile';
+export type Screen =
+  "explore" | "station" | "checkout" | "pass" | "bar" | "profile";
 
 export interface MobileVenue {
   id: string;
@@ -20,12 +21,18 @@ export interface MobileVenue {
 export interface StationItem {
   id: string;
   name: string;
-  zone: 'VIP Stage' | 'Esports Pod' | 'Bootcamp 5v5' | 'Console Lounge' | 'Sim Racing';
+  zone:
+    | "VIP Stage"
+    | "Esports Pod"
+    | "Bootcamp 5v5"
+    | "Console Lounge"
+    | "Sim Racing"
+    | "Cluj PC";
   hardware: string;
   gpu: string;
   peripherals: string;
   hourlyRate: number; // bani
-  status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE';
+  status: "AVAILABLE" | "OCCUPIED" | "MAINTENANCE";
   coordinates: { x: number; y: number };
 }
 
@@ -46,6 +53,9 @@ export interface BookingQuote {
 }
 
 export interface ActivePass {
+  venueId?: string;
+  stationId?: string;
+  hourlyRate?: number;
   bookingId: string;
   customerName?: string;
   venueName: string;
@@ -56,14 +66,14 @@ export interface ActivePass {
   totalRon: string;
   depositPaidRon: string;
   hmacToken: string;
-  sessionStatus: 'UPCOMING' | 'ACTIVE' | 'EXTENDED' | 'COMPLETED';
+  sessionStatus: "UPCOMING" | "ACTIVE" | "EXTENDED" | "COMPLETED";
   remainingSeconds: number;
 }
 
 export interface BarMenuItem {
   id: string;
   name: string;
-  category: 'ENERGY' | 'SNACK' | 'DRINK' | 'HOT_FOOD' | 'ALCOHOL';
+  category: "ENERGY" | "SNACK" | "DRINK" | "HOT_FOOD" | "ALCOHOL";
   price: number; // in bani
   requiresAgeVerification: boolean;
   imageIcon: string;
@@ -77,7 +87,7 @@ export interface BarOrder {
   items: { item: BarMenuItem; quantity: number }[];
   totalAmount: number;
   crockfordCode: string;
-  status: 'PLACED' | 'PREPARING' | 'READY' | 'HANDED_OFF';
+  status: "PLACED" | "PREPARING" | "READY" | "HANDED_OFF";
   placedAt: string;
 }
 
@@ -87,7 +97,7 @@ export interface UserProfile {
   email: string;
   phone: string;
   avatarUrl: string;
-  loyaltyTier: 'ELITE_PRO' | 'CHALLENGER' | 'RECRUIT';
+  loyaltyTier: "ELITE_PRO" | "CHALLENGER" | "RECRUIT";
   hoursPlayedTotal: number;
   savedCardsCount: number;
   ageVerified: boolean;

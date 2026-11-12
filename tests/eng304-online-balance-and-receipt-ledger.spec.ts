@@ -1,4 +1,21 @@
 import { startTestApp, type TestApp } from './support/auth-harness';
+import { base32Decode, hotp, timeStepAt } from '../src/auth/totp';
+
+const MFA_SECRET = 'JBSWY3DPEHPK3PXP';
+
+/**
+ * Completes the TOTP second factor for a fixture user and returns the rotated
+ * session cookie. Fixtures may not skip the gate: a membership-only session
+ * is `pending` and the guard refuses gated roles (ENG-002 T-04).
+ */
+async function elevateMfa(app: TestApp, cookie: string, secret: string): Promise<string> {
+  const res = await app.call('POST', '/v1/auth/mfa/verify', {
+    headers: { cookie, 'x-gamerbooker-csrf': '1' },
+    body: { code: hotp(base32Decode(secret), timeStepAt(Date.now())) },
+  });
+  expect(res.status).toBe(200);
+  return app.cookieOf(res);
+}
 
 interface Fixture {
   userId: string;
@@ -44,10 +61,13 @@ async function createVenueWithRoles(
   );
   await app.db.query(
     'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-      " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
+      " VALUES ($1, 'totp', pgp_sym_encrypt($2, 'test-mfa-key-0123456789abcdef0123456789'), now())" +
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-    [managerUser.userId],
+    [managerUser.userId, MFA_SECRET],
   );
+  // A gated role must actually complete the second factor: writing the factor
+  // row alone leaves the session pending, which is the gate working as designed.
+  managerUser.cookie = await elevateMfa(app, managerUser.cookie, MFA_SECRET);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -77,7 +97,7 @@ describe('ENG-304 Online Remaining Balance & Reception Receipt Ledger', () => {
   let bookingOffsetHours = 100;
 
   beforeAll(async () => {
-    app = await startTestApp('eng304');
+    app = await startTestApp('eng304', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Apex Gaming SRL', 'Apex Arena Timisoara');
 
     customerUser = await app.verifiedUser();
@@ -157,9 +177,33 @@ describe('ENG-304 Online Remaining Balance & Reception Receipt Ledger', () => {
     expect(holdRes.status).toBe(201);
     const hold = holdRes.json as any;
 
+    // A DEPOSIT booking reports its upfront charge as paid only when a captured
+    // intent backs this hold, so the fixture records that capture explicitly.
+    await app.db.query(
+      `INSERT INTO payment_intents
+         (tenant_id, venue_id, provider, provider_ref, idempotency_key,
+          amount_minor, currency, status, metadata)
+       SELECT h.tenant_id, h.venue_id, 'sandbox',
+              'sbx_pi_test_' || replace(gen_random_uuid()::text, '-', ''),
+              'test-solo-upfront-' || h.id,
+              q.due_now_minor, q.currency, 'CAPTURED',
+              jsonb_build_object('type', 'SOLO_BOOKING_CHECKOUT', 'hold_id', h.id, 'customer_id', h.customer_id)
+         FROM holds h JOIN price_quotes q ON q.id = h.quote_id
+        WHERE h.id = $1 AND q.due_now_minor > 0`,
+      [hold.id],
+    );
+
+    const upfront = await app.db.query<{ id: string }>(
+      "SELECT id FROM payment_intents WHERE metadata->>'hold_id' = $1 AND status = 'CAPTURED'",
+      [hold.id],
+    );
+
     const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: customerUser.cookie },
-      body: { hold_id: hold.id },
+      body: {
+        hold_id: hold.id,
+        ...(upfront.rows[0]?.id ? { payment_intent_id: upfront.rows[0].id } : {}),
+      },
     });
     expect(confirmRes.status).toBe(201);
     const booking = (confirmRes.json as any).booking || (confirmRes.json as any);
@@ -206,6 +250,7 @@ describe('ENG-304 Online Remaining Balance & Reception Receipt Ledger', () => {
 
       // Capture payment
       const capRes = await app.call('POST', '/v1/payments/capture-balance', {
+        headers: { cookie: customerUser.cookie },
         body: { provider_ref: providerRef },
       });
 
@@ -231,6 +276,7 @@ describe('ENG-304 Online Remaining Balance & Reception Receipt Ledger', () => {
         headers: { cookie: customerUser.cookie },
       });
       await app.call('POST', '/v1/payments/capture-balance', {
+        headers: { cookie: customerUser.cookie },
         body: { provider_ref: (intentRes.json as any).provider_ref },
       });
 
@@ -517,6 +563,7 @@ describe('ENG-304 Online Remaining Balance & Reception Receipt Ledger', () => {
 
       // Now online PSP capture arrives for the full balance!
       const capRes = await app.call('POST', '/v1/payments/capture-balance', {
+        headers: { cookie: customerUser.cookie },
         body: { provider_ref: providerRef },
       });
 

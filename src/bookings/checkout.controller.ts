@@ -15,6 +15,7 @@ import type { Request } from 'express';
 import type { SessionPrincipal } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
 import { RequireVenueRole, VenueRoleGuard } from '../auth/venue-role.guard';
+import { PaymentsService } from '../payments/payments.service';
 import { CheckoutService } from './checkout.service';
 import type {
   PayBalanceInput,
@@ -31,7 +32,10 @@ interface AuthedRequest extends Request {
 
 @Controller()
 export class CheckoutController {
-  constructor(private readonly checkoutService: CheckoutService) {}
+  constructor(
+    private readonly checkoutService: CheckoutService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // Customer Checkout & QR (/v1/checkout, /v1/bookings)
@@ -55,6 +59,34 @@ export class CheckoutController {
       idempotencyKey,
       requestId,
     );
+  }
+
+  @Post('holds/:hold_id/payment-intent')
+  @UseGuards(SessionGuard)
+  async createSoloPaymentIntent(
+    @Req() req: AuthedRequest,
+    @Param('hold_id') holdId: string,
+    @Headers('x-request-id') requestId?: string,
+  ) {
+    const customerId = req.auth?.userId;
+    if (!customerId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    return this.checkoutService.createSoloPaymentIntent(customerId, holdId, requestId);
+  }
+
+  @Get('holds/:hold_id/payment-intents/:intent_id')
+  @UseGuards(SessionGuard)
+  async getSoloPaymentIntentStatus(
+    @Req() req: AuthedRequest,
+    @Param('hold_id') holdId: string,
+    @Param('intent_id') intentId: string,
+  ) {
+    const customerId = req.auth?.userId;
+    if (!customerId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    return this.checkoutService.getSoloPaymentIntentStatus(customerId, holdId, intentId);
   }
 
   @Get('bookings/:id/qr')
@@ -150,14 +182,27 @@ export class CheckoutController {
 
   @Post('payments/capture-balance')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
   async captureBalancePayment(
+    @Req() req: AuthedRequest,
     @Body() body: { provider_ref: string },
     @Headers('x-request-id') requestId?: string,
   ) {
     if (!body?.provider_ref) {
       throw new Error('MISSING_PROVIDER_REF');
     }
-    return this.checkoutService.handleBalancePaymentCaptured(body.provider_ref, requestId);
+    const customerId = req.auth?.userId;
+    if (!customerId) {
+      throw new Error('AUTH_REQUIRED');
+    }
+    // Sandbox-only shim: the PSP must report the capture and the caller must own
+    // the intent. Real provider captures arrive through the signed webhook.
+    await this.paymentsService.assertProviderCaptured(body.provider_ref, customerId);
+    return this.checkoutService.handleBalancePaymentCaptured(
+      body.provider_ref,
+      requestId,
+      customerId,
+    );
   }
 
   @Get('dashboard/venues/:venue_id/receipts')

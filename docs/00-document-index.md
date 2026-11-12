@@ -1,5 +1,7 @@
 # Indexul documentelor
 
+Engineering handoffs: [status inventory, 2026-11-04](../handoff/HANDOFF-INDEX-2026-11-04.md) and [interaction checkpoint](../handoff/HANDOFF-INTERACTION-2026-11-04.md).
+
 **Total Markdown:** 44 fișiere.
 
 - [GamerBooker — Documentație enterprise v1.0](00-README.md)
@@ -45,3 +47,4 @@
 - [Comercializare, comisioane și acord partener](12-commercial/01-business-model-and-venue-agreement.md)
 - [Decision register — puncte de aprobat înainte de producție](99-open-issues-and-approvals.md)
 - [Surse, referințe și ce NU pretinde această documentație](99-source-references.md)
+- [Venue interface redesign — local demo, evidence and limits](11-design/01-venue-interface-redesign.md)

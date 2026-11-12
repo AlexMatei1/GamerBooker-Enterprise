@@ -166,7 +166,7 @@ export class PoliciesService {
     let version = 1;
 
     if (venueDefaultRes.rows.length > 0) {
-      effectiveSettings = venueDefaultRes.rows[0].settings;
+      effectiveSettings = { ...DEFAULT_PLATFORM_POLICY, ...venueDefaultRes.rows[0].settings };
       sourceLevel = 'venue_default';
       profileId = venueDefaultRes.rows[0].id;
       version = venueDefaultRes.rows[0].version;

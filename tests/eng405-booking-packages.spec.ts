@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception / Bar staff
   const recUser = await app.verifiedUser();
@@ -78,7 +80,7 @@ describe('ENG-405 Booking Packages with Atomic Availability & Stock Validation',
   let packageId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng405');
+    app = await startTestApp('eng405', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Cyber Arena SRL', 'Cyber Arena Iasi');
     otherVenueFixtures = await createVenueWithRoles(app, 'Other Venue SRL', 'Other Arena Suceava');
     customerUser = await app.verifiedUser();
@@ -484,10 +486,15 @@ describe('ENG-405 Booking Packages with Atomic Availability & Stock Validation',
       });
       const hold = holdRes.json as any;
 
-      // 3. Confirm booking
+      // 3. Confirm booking. The confirm guard requires server-side proof of the
+      // upfront charge; settle the hold the way the PSP webhook would.
+      const upfrontIntentId = await app.settleHoldPayment(hold.id);
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerUser.cookie },
-        body: { hold_id: hold.id },
+        body: {
+          hold_id: hold.id,
+          ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+        },
       });
 
       expect(confirmRes.status).toBe(201);

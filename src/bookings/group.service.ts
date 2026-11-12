@@ -10,6 +10,10 @@ import type {
   AdjustSharesDto,
   GroupBookingDetail,
   GroupParticipantDetail,
+  GroupBookingRow,
+  GroupParticipantRow,
+  GroupParticipantWithGroupRow,
+  GroupParticipantInvitationRow,
   InitiateCheckoutResult,
   GroupPaymentIntentResult,
   PaymentCaptureResult,
@@ -137,7 +141,7 @@ export class GroupService implements OnModuleInit {
       const totalParticipants = 1 + invited.length;
 
       // 2. Insert Group Booking record
-      const gbRes = await client.query<any>(
+      const gbRes = await client.query<GroupBookingRow>(
         `INSERT INTO group_bookings (
           tenant_id, venue_id, organizer_id, quote_id, mode, status,
           total_minor, due_now_minor, balance_minor, currency, expires_at
@@ -288,7 +292,7 @@ export class GroupService implements OnModuleInit {
     const pool = getPool();
 
     const condition = isQuoteId ? 'gb.quote_id = $1' : 'gb.id = $1';
-    const gbRes = await pool.query<any>(
+    const gbRes = await pool.query<GroupBookingRow>(
       `SELECT gb.*
        FROM group_bookings gb
        WHERE ${condition}`,
@@ -301,7 +305,7 @@ export class GroupService implements OnModuleInit {
 
     const gb = gbRes.rows[0];
 
-    const partRes = await pool.query<any>(
+    const partRes = await pool.query<GroupParticipantRow>(
       `SELECT * FROM group_participants
        WHERE group_booking_id = $1
        ORDER BY is_organizer DESC, created_at ASC`,
@@ -373,7 +377,7 @@ export class GroupService implements OnModuleInit {
     try {
       await client.query('BEGIN');
 
-      const gbRes = await client.query<any>(
+      const gbRes = await client.query<GroupBookingRow>(
         'SELECT * FROM group_bookings WHERE id = $1 FOR UPDATE',
         [groupBookingId],
       );
@@ -390,7 +394,7 @@ export class GroupService implements OnModuleInit {
         throw conflict('GROUP_NOT_IN_DRAFT', `Cannot adjust shares for a group in "${gb.status}" status`);
       }
 
-      const partRes = await client.query<any>(
+      const partRes = await client.query<GroupParticipantRow>(
         'SELECT * FROM group_participants WHERE group_booking_id = $1 FOR UPDATE',
         [groupBookingId],
       );
@@ -502,7 +506,7 @@ export class GroupService implements OnModuleInit {
     try {
       await client.query('BEGIN');
 
-      const partRes = await client.query<any>(
+      const partRes = await client.query<GroupParticipantInvitationRow>(
         `SELECT gp.*, gb.tenant_id, gb.venue_id, gb.expires_at as group_expires_at
          FROM group_participants gp
          JOIN group_bookings gb ON gb.id = gp.group_booking_id
@@ -538,7 +542,7 @@ export class GroupService implements OnModuleInit {
         throw conflict('USER_ALREADY_IN_GROUP', 'You are already registered as a participant in this group booking');
       }
 
-      const updRes = await client.query<any>(
+      const updRes = await client.query<GroupParticipantRow>(
         `UPDATE group_participants
          SET user_id = $1, status = 'ACCEPTED', accepted_at = now(), updated_at = now()
          WHERE id = $2
@@ -614,7 +618,7 @@ export class GroupService implements OnModuleInit {
     try {
       await client.query('BEGIN');
 
-      const partRes = await client.query<any>(
+      const partRes = await client.query<GroupParticipantWithGroupRow>(
         `SELECT gp.*, gb.tenant_id, gb.venue_id
          FROM group_participants gp
          JOIN group_bookings gb ON gb.id = gp.group_booking_id
@@ -775,7 +779,7 @@ export class GroupService implements OnModuleInit {
     requestId?: string,
   ): Promise<GroupPaymentIntentResult> {
     const pool = getPool();
-    const reqId = requestId || randomUUID();
+    void requestId;
     const gb = await this.getGroupBooking(callerUserId, groupBookingId, false);
 
     if (gb.status !== 'PENDING_PAYMENTS') {
@@ -901,7 +905,7 @@ export class GroupService implements OnModuleInit {
         };
       }
 
-      const gbRes = await client.query<any>(
+      const gbRes = await client.query<GroupBookingRow>(
         'SELECT * FROM group_bookings WHERE id = $1 FOR UPDATE',
         [pi.group_booking_id],
       );
@@ -940,7 +944,7 @@ export class GroupService implements OnModuleInit {
             gb.venue_id,
             gb.id,
             pi.id,
-            (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+            (pi.metadata?.participant_user_id || gb.organizer_id),
             pi.amount_minor,
             refundResult.refundRef,
           ],
@@ -1021,7 +1025,7 @@ export class GroupService implements OnModuleInit {
               gb.venue_id,
               gb.id,
               pi.id,
-              (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+              (pi.metadata?.participant_user_id || gb.organizer_id),
               pi.amount_minor,
               refundRes.refundRef,
             ],
@@ -1050,7 +1054,7 @@ export class GroupService implements OnModuleInit {
           return {
             confirmed: true,
             group_booking_id: gb.id,
-            booking_id: gb.booking_id,
+            booking_id: gb.booking_id ?? undefined,
             public_code: bRes.rows[0]?.public_code,
             refunded: true,
             reason: 'SHARE_ALREADY_COVERED_BY_ORGANIZER',
@@ -1064,7 +1068,7 @@ export class GroupService implements OnModuleInit {
         return {
           confirmed: true,
           group_booking_id: gb.id,
-          booking_id: gb.booking_id,
+          booking_id: gb.booking_id ?? undefined,
           public_code: bRes.rows[0]?.public_code,
           all_due_paid: true,
           total_paid_minor: Number(gb.due_now_minor),
@@ -1114,12 +1118,21 @@ export class GroupService implements OnModuleInit {
         };
       }
 
-      // Confirm booking via BookingsService
+      // Confirm booking via BookingsService, inside this transaction: the
+      // captured-share proof it checks is only visible to this connection.
+      if (!gb.hold_id) {
+        throw conflict(
+          'GROUP_HOLD_MISSING',
+          'Group booking is fully paid but has no hold to confirm; refusing to invent a booking',
+        );
+      }
+
       const confirmedBooking = await this.bookingsService.confirmBooking(
         gb.organizer_id,
         { hold_id: gb.hold_id },
         `gb-confirm-${gb.id}`,
         reqId,
+        client,
       );
 
       await client.query(
@@ -1197,7 +1210,7 @@ export class GroupService implements OnModuleInit {
     try {
       await client.query('BEGIN');
 
-      const gbRes = await client.query<any>(
+      const gbRes = await client.query<GroupBookingRow>(
         'SELECT * FROM group_bookings WHERE id = $1 FOR UPDATE',
         [groupBookingId],
       );
@@ -1264,7 +1277,7 @@ export class GroupService implements OnModuleInit {
             gb.venue_id,
             gb.id,
             pi.id,
-            (pi.metadata as any)?.participant_user_id || gb.organizer_id,
+            (pi.metadata?.participant_user_id || gb.organizer_id),
             amt,
             refundRes.refundRef,
           ],

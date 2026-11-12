@@ -1,0 +1,35 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {start}=require('./server.cjs');
+test('complete isolated HTTP lifecycle with disclosed money/policy, role scan, poll, replay, cancellation and bar authority',async()=>{
+ let now=new Date('2026-11-05T06:00:00Z').getTime();const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gb-journey-'));
+ const app=start({file:path.join(dir,'state.json'),now:()=>now,customerPort:18797,staffPort:18798});
+ try{await Promise.all(app.servers.map(s=>new Promise(r=>s.listening?r():s.once('listening',r))));
+ const request=async(role,route,body,owner)=>{const response=await fetch(`http://127.0.0.1:${role==='customer'?18797:18798}/preview/${role}/${route}`,{method:body===undefined?'GET':'POST',headers:{'X-Preview-Client':role,'Content-Type':'application/json',Authorization:'Bearer '+(role==='staff'?app.staffCapability:owner||'')},body:body===undefined?undefined:JSON.stringify(body)});assert.equal(Number(response.headers.get('X-Preview-Now')),now);return{status:response.status,value:await response.json()};};
+ const owner=(await request('customer','session',{})).value.session,outsider=(await request('customer','session',{})).value.session;
+ const venueId='v-arena-bucharest-01';
+ const q=(await request('customer','quote',{venueId,stationName:'VIP-01',durationHours:1,start:'DEMO+15s',promo:'ENTERPRISE10'},owner)).value;
+ assert.deepEqual(q.amounts,{rate:5000,subtotal:5000,baseDeposit:1500,discount:150,deposit:1350,remaining:3500,total:4850,promo:'ENTERPRISE10'});
+ assert.equal(q.policy.cancelHours,3);assert.equal(q.cancellationDeadline,q.startAt-10800000);
+ await request('staff','policy',{venueId,cancelHours:4});
+ const booked=await request('customer','book',{quoteId:q.id,requestId:'http-booking-key-123'},owner);assert.equal(booked.status,201);const p=booked.value;
+ assert.deepEqual(p.amounts,q.amounts);assert.deepEqual(p.policy,q.policy);assert.equal(p.status,'CONFIRMED');
+ assert.equal((await request('customer','passes',undefined,owner)).value[0].id,p.id);
+ assert.equal((await request('customer','bar-eligibility',{id:p.id},owner)).status,409);
+ now=p.startAt+900000;
+ assert.equal((await request('staff','scan',{venueId:'v-cyber-cluj-02',code:p.code})).value.error,'WRONG_VENUE');
+ const scanned=(await request('staff','scan',{venueId,code:p.code})).value;assert.equal(scanned.status,'ACTIVE');assert.equal(scanned.endAt,p.endAt);assert.equal(scanned.activeEndAt,p.endAt);assert.equal(p.endAt-now,2700000);
+ const polled=(await request('customer','passes',undefined,owner)).value[0];assert.equal(polled.status,'ACTIVE');assert.equal(polled.endAt,q.endAt);
+ assert.equal((await request('customer','bar-eligibility',{id:p.id},owner)).status,200);
+ assert.equal((await request('customer','bar-eligibility',{id:p.id},outsider)).status,404);
+ assert.equal((await request('staff','scan',{venueId,code:p.code})).value.error,'ALREADY_CHECKED_IN');
+ assert.equal((await request('customer','cancel',{id:p.id},owner)).status,409);
+ const future=async(stationName)=>{const quote=(await request('customer','quote',{venueId,stationName,durationHours:1,start:'23:00'},owner)).value;assert.ok(quote.cancellationDeadline>now);return(await request('customer','book',{quoteId:quote.id,requestId:'future-http-key-'+stationName},owner)).value;};
+ const cancellable=await future('POD-A1'),late=await future('POD-A2');await request('staff','policy',{venueId,cancelHours:0});
+ assert.equal(cancellable.policy.cancelHours,4);assert.equal((await request('customer','cancel',{id:cancellable.id},outsider)).status,404);
+ now=cancellable.cancellationDeadline;assert.equal((await request('customer','cancel',{id:cancellable.id},owner)).value.status,'CANCELLED');
+ now=late.cancellationDeadline+1;assert.equal((await request('customer','cancel',{id:late.id},owner)).value.error,'CANCELLATION_WINDOW_CLOSED');
+ assert.equal((await request('customer','bar-eligibility',{id:p.id},owner)).status,409);
+ assert.equal((await request('staff','scan',{venueId,code:cancellable.code})).value.error,'PASS_CANCELLED');
+ assert.equal((await request('customer','passes',undefined,owner)).value.length,3);
+ }finally{await app.close();fs.rmSync(dir,{recursive:true,force:true});}
+});

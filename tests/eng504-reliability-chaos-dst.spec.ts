@@ -38,6 +38,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -51,6 +52,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -78,7 +80,7 @@ describe('ENG-504 End-to-End Reliability, Chaos PSP/Refund/Concurrency, and DST 
   let replayHarness: WebhookReplayHarness;
 
   beforeAll(async () => {
-    app = await startTestApp('eng504');
+    app = await startTestApp('eng504', { browserClient: true });
     replayHarness = new WebhookReplayHarness(new SandboxPaymentProvider());
     venue = await createVenueWithRoles(app, 'Nexus Gaming SRL', 'Nexus Bucharest Arena');
     const custUser = await app.verifiedUser();
@@ -294,9 +296,16 @@ describe('ENG-504 End-to-End Reliability, Chaos PSP/Refund/Concurrency, and DST 
         headers: { cookie: customer.cookie },
         body: { quote_id: (qRes.json as any).quote_id },
       });
+      const cartHoldId = (hRes.json as any).id;
+      // The confirm guard requires server-side proof of the upfront
+      // charge; settle the hold the way the PSP webhook would.
+      const cartUpfrontIntent = await app.settleHoldPayment(cartHoldId);
       const cRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customer.cookie },
-        body: { hold_id: (hRes.json as any).id },
+        body: {
+          hold_id: cartHoldId,
+          ...(cartUpfrontIntent ? { payment_intent_id: cartUpfrontIntent } : {}),
+        },
       });
       bookingForCart = (cRes.json as any).booking?.id || (cRes.json as any).id;
 
@@ -384,9 +393,16 @@ describe('ENG-504 End-to-End Reliability, Chaos PSP/Refund/Concurrency, and DST 
         headers: { cookie: customer.cookie },
         body: { quote_id: (qRes.json as any).quote_id },
       });
+      const handoffHoldId = (hRes.json as any).id;
+      // The confirm guard requires server-side proof of the upfront
+      // charge; settle the hold the way the PSP webhook would.
+      const handoffUpfrontIntent = await app.settleHoldPayment(handoffHoldId);
       const cRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customer.cookie },
-        body: { hold_id: (hRes.json as any).id },
+        body: {
+          hold_id: handoffHoldId,
+          ...(handoffUpfrontIntent ? { payment_intent_id: handoffUpfrontIntent } : {}),
+        },
       });
       const bookingId = (cRes.json as any).booking?.id || (cRes.json as any).id;
 
@@ -520,9 +536,16 @@ describe('ENG-504 End-to-End Reliability, Chaos PSP/Refund/Concurrency, and DST 
         headers: { cookie: customer.cookie },
         body: { quote_id: (qRes.json as any).quote_id },
       });
+      const voidHoldId = (hRes.json as any).id;
+      // The confirm guard requires server-side proof of the upfront
+      // charge; settle the hold the way the PSP webhook would.
+      const voidUpfrontIntent = await app.settleHoldPayment(voidHoldId);
       const cRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customer.cookie },
-        body: { hold_id: (hRes.json as any).id },
+        body: {
+          hold_id: voidHoldId,
+          ...(voidUpfrontIntent ? { payment_intent_id: voidUpfrontIntent } : {}),
+        },
       });
       const bookingId = (cRes.json as any).booking?.id || (cRes.json as any).id;
 

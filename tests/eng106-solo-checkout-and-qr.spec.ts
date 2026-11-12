@@ -51,8 +51,8 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
   let app: TestApp;
   let ownerFixture: Fixture;
   let foreignFixture: Fixture;
-  let customerA: { userId: string; cookie: string };
-  let customerB: { userId: string; cookie: string };
+  let customerA: { userId: string; token: string };
+  let customerB: { userId: string; token: string };
   let checkoutService: CheckoutService;
 
   let roomId: string;
@@ -64,11 +64,11 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
   beforeAll(async () => {
     try {
       app = await startTestApp('eng106');
-      ownerFixture = await createTenantAndVenue(app, 'CyberArena SRL', 'CyberArena Bucharest', 'OWNER');
+      ownerFixture = await createTenantAndVenue(app, 'CyberArena SRL', 'CyberArena Bucharest', 'RECEPTION');
       foreignFixture = await createTenantAndVenue(app, 'TitanClub SRL', 'Titan Club Brasov', 'OWNER');
 
-      customerA = await app.verifiedUser();
-      customerB = await app.verifiedUser();
+      customerA = await app.verifiedMobileUser();
+      customerB = await app.verifiedMobileUser();
 
       checkoutService = new CheckoutService(new BookingsService());
 
@@ -171,25 +171,35 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
   });
 
   async function createHold(
-    userCookie: string,
+    bearerToken: string,
     venueId: string,
     resourceIds: string[],
     startsAt: string,
     endsAt: string,
   ) {
     const quoteRes = await app.call('POST', '/v1/quotes', {
-      headers: { cookie: userCookie },
+      headers: { authorization: `Bearer ${bearerToken}` },
       body: { venue_id: venueId, resource_ids: resourceIds, starts_at: startsAt, ends_at: endsAt },
     });
     expect(quoteRes.status).toBe(201);
     const quote = quoteRes.json as { quote_id: string; total_minor: number; due_now_minor: number };
 
     const holdRes = await app.call('POST', '/v1/holds', {
-      headers: { cookie: userCookie },
+      headers: { authorization: `Bearer ${bearerToken}` },
       body: { quote_id: quote.quote_id },
     });
     expect(holdRes.status).toBe(201);
-    return holdRes.json as { id: string; status: string };
+    const hold = holdRes.json as { id: string; customer_id: string; status: string };
+    const payment = await app.db.query<{ id: string }>(
+      `INSERT INTO payment_intents
+         (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata)
+       SELECT h.tenant_id, h.venue_id, 'stripe', 'pi_test_' || replace(gen_random_uuid()::text, '-', ''),
+              'test-solo-' || h.id, q.due_now_minor, q.currency, 'CAPTURED',
+              jsonb_build_object('type', 'SOLO_BOOKING_CHECKOUT', 'hold_id', h.id, 'customer_id', h.customer_id)
+         FROM holds h JOIN price_quotes q ON q.id = h.quote_id WHERE h.id = $1 RETURNING id`,
+      [hold.id],
+    );
+    return { ...hold, payment_intent_id: payment.rows[0].id };
   }
 
   describe('Solo Checkout (FULL and DEPOSIT)', () => {
@@ -197,12 +207,12 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-20T14:00:00.000Z';
       const endsAt = '2026-11-20T16:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
 
       // Solo Checkout
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id, payment_method: 'CARD_ONLINE' },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id, payment_method: 'CARD_ONLINE' },
       });
 
       expect(checkoutRes.status).toBe(201);
@@ -229,7 +239,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
 
       // Verify Balance API
       const balanceRes = await app.call('GET', `/v1/bookings/${data.booking.id}/balance`, {
-        headers: { cookie: customerA.cookie },
+        headers: { authorization: `Bearer ${customerA.token}` },
       });
       expect(balanceRes.status).toBe(200);
       const balanceData = balanceRes.json as {
@@ -246,12 +256,12 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-21T14:00:00.000Z';
       const endsAt = '2026-11-21T16:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
 
       // Solo Checkout
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id, payment_method: 'CARD_ONLINE' },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id, payment_method: 'CARD_ONLINE' },
       });
 
       expect(checkoutRes.status).toBe(201);
@@ -276,7 +286,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
 
       // Balance API
       const balanceRes = await app.call('GET', `/v1/bookings/${data.booking.id}/balance`, {
-        headers: { cookie: customerA.cookie },
+        headers: { authorization: `Bearer ${customerA.token}` },
       });
       expect(balanceRes.status).toBe(200);
       const balanceData = balanceRes.json as {
@@ -292,6 +302,50 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       expect(balanceData.deposit_percentage).toBe(40);
       expect(balanceData.remaining_payment_methods).toEqual(['ONLINE_OR_RECEPTION']);
     });
+
+    it('denies a foreign customer from using an active hold or its idempotency key, while allowing the owner replay', async () => {
+      const startsAt = '2026-11-21T18:00:00.000Z';
+      const endsAt = '2026-11-21T20:00:00.000Z';
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const idempotencyKey = 'solo-checkout-owner-only-001';
+
+      const foreignCheckout = await app.call('POST', '/v1/checkout/solo', {
+        headers: { authorization: `Bearer ${customerB.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(foreignCheckout.status).toBe(403);
+      expect(app.errorOf(foreignCheckout).code).toBe('FORBIDDEN');
+
+      const ownerCheckout = await app.call('POST', '/v1/checkout/solo', {
+        headers: {
+          authorization: `Bearer ${customerA.token}`,
+          'idempotency-key': idempotencyKey,
+        },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(ownerCheckout.status).toBe(201);
+      const ownerBooking = (ownerCheckout.json as { booking: { id: string } }).booking;
+
+      const foreignReplay = await app.call('POST', '/v1/checkout/solo', {
+        headers: {
+          authorization: `Bearer ${customerB.token}`,
+          'idempotency-key': idempotencyKey,
+        },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(foreignReplay.status).toBe(403);
+      expect(app.errorOf(foreignReplay).code).toBe('FORBIDDEN');
+
+      const ownerReplay = await app.call('POST', '/v1/checkout/solo', {
+        headers: {
+          authorization: `Bearer ${customerA.token}`,
+          'idempotency-key': idempotencyKey,
+        },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(ownerReplay.status).toBe(201);
+      expect((ownerReplay.json as { booking: { id: string } }).booking.id).toBe(ownerBooking.id);
+    });
   });
 
   describe('Rolling QR Token Generation & Verification', () => {
@@ -299,16 +353,16 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-22T10:00:00.000Z';
       const endsAt = '2026-11-22T12:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const booking = (checkoutRes.json as any).booking;
 
       // Customer fetches QR token
       const qrRes = await app.call('GET', `/v1/bookings/${booking.id}/qr`, {
-        headers: { cookie: customerA.cookie },
+        headers: { authorization: `Bearer ${customerA.token}` },
       });
       expect(qrRes.status).toBe(200);
       const qrData = qrRes.json as { token: string; public_code: string; expires_at: string };
@@ -325,10 +379,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-22T14:00:00.000Z';
       const endsAt = '2026-11-22T16:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const qrToken = (checkoutRes.json as any).qr_token;
 
@@ -341,7 +395,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/checkin`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: { qr_token: tamperedToken },
         },
       );
@@ -358,10 +412,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // starts in 5 minutes
       const endsAt = new Date(now.getTime() + 125 * 60 * 1000).toISOString();
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const { booking, qr_token } = checkoutRes.json as any;
 
@@ -370,7 +424,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/checkin`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: { qr_token },
         },
       );
@@ -397,7 +451,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/checkin`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: { qr_token },
         },
       );
@@ -419,10 +473,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-25T14:00:00.000Z';
       const endsAt = '2026-11-25T16:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [fullPc1Id], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const { qr_token } = checkoutRes.json as any;
 
@@ -430,7 +484,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/checkin`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: { qr_token },
         },
       );
@@ -445,10 +499,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
       const endsAt = new Date(now.getTime() + 125 * 60 * 1000).toISOString();
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const { qr_token } = checkoutRes.json as any;
 
@@ -471,10 +525,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-26T10:00:00.000Z';
       const endsAt = '2026-11-26T12:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const booking = (checkoutRes.json as any).booking;
       // Remaining balance = 2400 bani
@@ -485,7 +539,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/bookings/${booking.id}/pay-balance`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: {
             amount_minor: 2400,
             payment_method: 'CASH',
@@ -507,7 +561,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
 
       // Verify booking balance in DB is now 0 and fully paid
       const balanceRes = await app.call('GET', `/v1/bookings/${booking.id}/balance`, {
-        headers: { cookie: customerA.cookie },
+        headers: { authorization: `Bearer ${customerA.token}` },
       });
       const balanceData = balanceRes.json as {
         is_fully_paid: boolean;
@@ -537,10 +591,10 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       const startsAt = '2026-11-26T14:00:00.000Z';
       const endsAt = '2026-11-26T16:00:00.000Z';
 
-      const hold = await createHold(customerA.cookie, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
       const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
-        headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const booking = (checkoutRes.json as any).booking;
 
@@ -549,7 +603,7 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
         'POST',
         `/v1/dashboard/venues/${ownerFixture.venueId}/bookings/${booking.id}/pay-balance`,
         {
-          headers: { cookie: ownerFixture.cookie },
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
           body: {
             amount_minor: 5000,
             payment_method: 'POS_TERMINAL',
@@ -561,6 +615,68 @@ describe('ENG-106 Solo Checkout (FULL and DEPOSIT), QR, Balance Display', () => 
       expect(payRes.status).toBe(400);
       const err = app.errorOf(payRes);
       expect(err.code).toBe('OVERPAYMENT_NOT_ALLOWED');
+    });
+
+    // T-022 (Balance online-only venue / Permissions): a venue that declares
+    // ONLINE_ONLY must not let the desk record the outstanding balance as cash.
+    // Before the fix the policy was only a message string, so reception could
+    // book revenue the venue said it cannot collect.
+    it('refuses desk settlement when the venue policy is ONLINE_ONLY (400 ONLINE_SETTLEMENT_ONLY)', async () => {
+      const startsAt = '2026-11-27T10:00:00.000Z';
+      const endsAt = '2026-11-27T12:00:00.000Z';
+
+      const hold = await createHold(customerA.token, ownerFixture.venueId, [depositPcId], startsAt, endsAt);
+      const checkoutRes = await app.call('POST', '/v1/checkout/solo', {
+        headers: { authorization: `Bearer ${customerA.token}` },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      const booking = (checkoutRes.json as any).booking;
+
+      await app.db.query(
+        `UPDATE bookings SET policy_snapshot = $2::jsonb WHERE id = $1`,
+        [
+          booking.id,
+          JSON.stringify({
+            prepaid_mode: 'DEPOSIT',
+            deposit_percentage: 40,
+            deposit_mode_settlement: 'ONLINE_ONLY',
+          }),
+        ],
+      );
+
+      const payRes = await app.call(
+        'POST',
+        `/v1/dashboard/venues/${ownerFixture.venueId}/bookings/${booking.id}/pay-balance`,
+        {
+          headers: { cookie: ownerFixture.cookie, 'x-gamerbooker-csrf': '1' },
+          body: {
+            amount_minor: 2400,
+            payment_method: 'CASH',
+            reference: 'CASH-ONLINE-ONLY-001',
+          },
+        },
+      );
+
+      expect(payRes.status).toBe(400);
+      expect(app.errorOf(payRes).code).toBe('ONLINE_SETTLEMENT_ONLY');
+
+      // The refusal must be truthful: no receipt row is written, and the balance is
+      // still outstanding so the customer can pay it online.
+      const receipts = await app.db.query(
+        'SELECT id FROM offline_receipts WHERE booking_id = $1',
+        [booking.id],
+      );
+      expect(receipts.rows).toHaveLength(0);
+
+      const balanceRes = await app.call('GET', `/v1/bookings/${booking.id}/balance`, {
+        headers: { authorization: `Bearer ${customerA.token}` },
+      });
+      const balanceData = balanceRes.json as {
+        balance_minor: number;
+        is_fully_paid: boolean;
+      };
+      expect(balanceData.balance_minor).toBe(2400);
+      expect(balanceData.is_fully_paid).toBe(false);
     });
   });
 });

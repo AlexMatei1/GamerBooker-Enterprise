@@ -79,7 +79,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
   let bookingOffsetHours = 50;
 
   beforeAll(async () => {
-    app = await startTestApp('eng303');
+    app = await startTestApp('eng303', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Nexus Gaming SRL', 'Nexus Arena');
 
     organizer = await app.verifiedUser();
@@ -295,6 +295,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
 
       // Capture difference payment
       const captureRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: pi.provider_ref },
       });
 
@@ -336,6 +337,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
         headers: { cookie: organizer.cookie },
       });
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: (piOrg.json as any).payment_intent.provider_ref },
       });
 
@@ -344,6 +346,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
         headers: { cookie: participant1.cookie },
       });
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant1.cookie },
         body: { provider_ref: (pi1.json as any).payment_intent.provider_ref },
       });
 
@@ -367,6 +370,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
 
       // Capture difference payment
       const capRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: diffPi.provider_ref },
       });
 
@@ -406,6 +410,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
         headers: { cookie: organizer.cookie },
       });
       await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: organizer.cookie },
         body: { provider_ref: (diffRes.json as any).payment_intent.provider_ref },
       });
 
@@ -418,6 +423,7 @@ describe('ENG-303 Organizer Pay-All & Pay-Difference Safety', () => {
 
       // Now Participant 2's payment capture arrives late!
       const lateCaptureRes = await app.call('POST', '/v1/group-bookings/payments/capture', {
+        headers: { cookie: participant2.cookie },
         body: { provider_ref: pi2Ref },
       });
 

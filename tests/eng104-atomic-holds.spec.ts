@@ -40,6 +40,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -62,7 +63,7 @@ describe('ENG-104 Atomic Hold + Private Room Component Closure + Expiry Worker',
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng104');
+      app = await startTestApp('eng104', { browserClient: true });
       ownerFixture = await createTenantAndVenue(app, 'Nexus Gaming SRL', 'Nexus Arena', 'OWNER');
       foreignFixture = await createTenantAndVenue(app, 'RedLine Arena SRL', 'RedLine Hub', 'OWNER');
 

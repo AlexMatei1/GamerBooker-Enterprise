@@ -37,7 +37,7 @@ export interface CreateDeferredLinkInput {
   venue_id: string;
   zone_id?: string;
   package_id?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   ttl_seconds?: number;
 }
 
@@ -46,7 +46,7 @@ export interface DeferredLinkResult {
   venue_id: string;
   zone_id?: string | null;
   package_id?: string | null;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   expires_at: string;
   consumed: boolean;
 }
@@ -81,7 +81,7 @@ export interface AccessibleResourceItem {
   contrast_color_token: string;
   hourly_rate_minor: number;
   formatted_price: string;
-  hardware_specs?: Record<string, any>;
+  hardware_specs?: Record<string, unknown>;
   aria_label: string;
   voiceover_text: string;
 }

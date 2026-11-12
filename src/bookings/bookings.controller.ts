@@ -90,7 +90,7 @@ export class BookingsController {
         expected_version: body.expected_version,
         reason: body.reason,
       },
-      'CUSTOMER',
+      { actorRole: 'CUSTOMER' },
       requestId,
     );
   }
@@ -112,6 +112,7 @@ export class BookingsController {
   @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
   async transitionVenueBooking(
     @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
     @Param('id') bookingId: string,
     @Body() input: TransitionBookingInput,
     @Headers('x-request-id') requestId?: string,
@@ -120,12 +121,11 @@ export class BookingsController {
     if (!actorId) {
       throw new Error('AUTH_REQUIRED');
     }
-    const actorRole = 'STAFF';
     return this.bookingsService.transitionBooking(
       bookingId,
       actorId,
       input,
-      actorRole,
+      { actorRole: 'STAFF', venueId },
       requestId,
     );
   }

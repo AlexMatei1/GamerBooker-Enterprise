@@ -151,6 +151,49 @@ describe('ENG-005 PSP Integration & Webhook Replay Harness', () => {
       const error = app.errorOf(res);
       expect(error.code).toBe('PSP_PROVIDER_NOT_SUPPORTED');
     });
+
+    // Regression: a PSP signs the bytes it sent bytes. If the API re-serialises the
+    // parsed JSON before hashing, any formatting (and Stripe always sends some)
+    // changes the digest and a genuine webhook is rejected. This passes a
+    // pretty-printed, correctly signed body and demands a 200.
+    it('verifies a signature over the exact received bytes, not a re-serialised body', async () => {
+      const paymentsService = new PaymentsService(provider);
+      const intent = await paymentsService.createIntent(
+        tenantId,
+        venueId,
+        {
+          amountMinor: 1234,
+          currency: 'RON',
+          reference: 'raw_body_bytes',
+          idempotencyKey: 'idem_raw_body_bytes',
+        },
+        'sandbox',
+      );
+
+      const rawBody = JSON.stringify(
+        {
+          event_id: `evt_ws_${Date.now()}`,
+          event_type: 'payment_intent.succeeded',
+          provider_ref: intent.providerRef,
+          amount_minor: 1234,
+          currency: 'RON',
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2,
+      );
+      expect(rawBody).toContain('\n');
+      expect(rawBody).toContain('  ');
+
+      const res = await app.call('POST', '/v1/webhooks/payments/sandbox', {
+        body: rawBody,
+        headers: { 'x-psp-signature': provider.signPayload(rawBody) },
+      });
+
+      expect(res.status).toBe(200);
+      const updated = await paymentsService.getIntent(intent.providerRef);
+      expect(updated?.status).toBe('CAPTURED');
+    });
   });
 
   describe('Webhook Processing, State Transitions & Replay Harness', () => {

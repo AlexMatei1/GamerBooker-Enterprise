@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -80,7 +82,7 @@ describe('ENG-204 Resource Inspector, Adjacency Edges, and Private Room Composit
   let secondPrivateRoomId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng204');
+    app = await startTestApp('eng204', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'CyberArena Operations SRL', 'CyberArena Bucharest');
     foreignFixtures = await createVenueWithRoles(app, 'ArcadeWorld SRL', 'Arcade Brasov');
 

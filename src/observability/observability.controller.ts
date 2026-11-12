@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, UseGuard
 import type { Request } from 'express';
 import type { SessionPrincipal } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
+import { ClosedLegacyGuard } from '../auth/venue-role.guard';
 import { ObservabilityService } from './observability.service';
 import type { LogSecurityViolationInput } from './observability.types';
 
@@ -14,17 +15,19 @@ export class ObservabilityController {
   constructor(private readonly observabilityService: ObservabilityService) {}
 
   @Get('security-metrics')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   async getSecurityMetrics(@Query('tenant_id') tenantId?: string) {
     return this.observabilityService.getSecurityMetrics(tenantId);
   }
 
   @Get('system-health')
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   async getSystemHealth() {
     return this.observabilityService.getSystemHealth();
   }
 
   @Post('security-violations')
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   @HttpCode(HttpStatus.CREATED)
   async logSecurityViolation(@Req() req: AuthedRequest, @Body() input: LogSecurityViolationInput) {
     const actorId = input.actorId || req.auth?.userId;

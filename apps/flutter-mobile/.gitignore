@@ -1,0 +1,12 @@
+.dart_tool/
+.flutter-plugins-dependencies
+android/.gradle/
+android/local.properties
+build/
+
+# Private release signing material — never committed.
+android/key.properties
+android/*.jks
+android/*.keystore
+android/**/*.jks
+android/**/*.keystore

@@ -13,6 +13,8 @@ import { IDLE_TTL_MS, SESSION_COOKIE } from './auth.constants';
 import { sessionCookie } from './cookies';
 import { MFA_GATED_ROLES } from './membership.service';
 import { hashToken } from './tokens';
+import { assertCookieMutation } from './csrf';
+import { LocalAdminPolicy, type LocalAdminRequest } from './local-admin-policy';
 import {
   isTokenShaped,
   readBearer,
@@ -21,9 +23,11 @@ import {
   type AuthContext,
 } from './token-shape';
 
-interface RequestLike {
+interface RequestLike extends LocalAdminRequest {
+  method?: string;
+  originalUrl?: string;
   headers: Record<string, string | string[] | undefined>;
-  auth?: AuthContext;
+  auth?: AuthContext & { localAdminPasswordOnly?: boolean };
 }
 
 interface SessionRow {
@@ -35,6 +39,8 @@ interface SessionRow {
   mfa_gated: boolean;
   /** True when a confirmed TOTP factor exists. */
   mfa_enrolled: boolean;
+  mfa_verified_at: Date | null;
+  platform_admin: boolean;
 }
 
 const REQUIRED_MESSAGE = 'Authentication is required.';
@@ -76,6 +82,7 @@ interface Presented {
 @Injectable()
 export class SessionGuard implements CanActivate {
   private readonly logger = new Logger(SessionGuard.name);
+  constructor(private readonly localAdmin: LocalAdminPolicy) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
@@ -86,10 +93,12 @@ export class SessionGuard implements CanActivate {
     }
 
     const found = await getPool().query<SessionRow>(
-      'SELECT s.id, s.user_id, s.kind, s.mfa_state,' +
-        ' EXISTS (SELECT 1 FROM venue_memberships m' +
+      'SELECT s.id, s.user_id, s.kind, s.mfa_state, s.mfa_verified_at,' +
+        ' (EXISTS (SELECT 1 FROM venue_memberships m' +
         '   WHERE m.user_id = s.user_id AND m.active = true AND m.role = ANY($2::text[]))' +
+        ' OR EXISTS (SELECT 1 FROM platform_grants g WHERE g.user_id=s.user_id AND g.revoked_at IS NULL))' +
         '   AS mfa_gated,' +
+        ' EXISTS (SELECT 1 FROM platform_grants g WHERE g.user_id=s.user_id AND g.revoked_at IS NULL) AS platform_admin,' +
         ' EXISTS (SELECT 1 FROM user_mfa_factors f' +
         "   WHERE f.user_id = s.user_id AND f.type = 'totp' AND f.confirmed_at IS NOT NULL)" +
         '   AS mfa_enrolled' +
@@ -99,7 +108,7 @@ export class SessionGuard implements CanActivate {
         ' AND s.revoked_at IS NULL' +
         ' AND s.idle_expires_at > now()' +
         ' AND s.absolute_expires_at > now()' +
-        ' AND u.deleted_at IS NULL',
+        " AND u.deleted_at IS NULL AND u.email_verified_at IS NOT NULL AND u.identity_status='verified'",
       [hashToken(presented.token), MFA_GATED_ROLES],
     );
 
@@ -119,14 +128,20 @@ export class SessionGuard implements CanActivate {
     if (row.kind === 'mobile' && presented.channel === 'cookie') {
       throw required();
     }
+    if (presented.channel === 'cookie') assertCookieMutation(req);
+    const localPassword = this.localAdmin.requiresLocalProof(row);
+    if (localPassword && !await this.localAdmin.authorizes(req, row.id, row.user_id, presented.channel)) throw required();
+    if (row.platform_admin && req.originalUrl && !/^\/v1\/(auth(?:\/|$)|me(?:\?|$)|access(?:\/|$)|admin(?:\/|$))/.test(req.originalUrl)) {
+      throw new AuthHttpError(403,'AUTH_ROLE_NOT_PERMITTED','Administrator accounts may only administer platform access.');
+    }
 
     // A session that stopped at the second factor may only finish that step.
     // The gate is evaluated per request, not only at login: a membership granted
     // mid-session (or a factor deleted out from under an active session) must not
     // leave an unverified session with privileged reach. The check runs before
     // the handler and before the idle touch.
-    const gated = row.mfa_state === 'pending' || (row.mfa_gated && !row.mfa_enrolled);
-    if (gated && Reflect.getMetadata(MFA_PENDING_KEY, context.getHandler()) !== true) {
+    const gated = row.mfa_state === 'pending' || (row.mfa_gated && (!row.mfa_enrolled || !row.mfa_verified_at));
+    if (gated && !localPassword && Reflect.getMetadata(MFA_PENDING_KEY, context.getHandler()) !== true) {
       throw mfaRequired();
     }
 
@@ -135,7 +150,9 @@ export class SessionGuard implements CanActivate {
       userId: row.user_id,
       kind: row.kind,
       mfaState: row.mfa_state,
+      localAdminPasswordOnly: localPassword,
     };
+    http.getResponse<Response>().setHeader('Cache-Control','no-store');
 
     await this.touch(http.getResponse<Response>(), row, presented);
     return true;

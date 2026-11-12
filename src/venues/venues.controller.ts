@@ -18,7 +18,8 @@ import {
   type VenueSummary,
 } from '../auth/membership.service';
 import { SessionGuard } from '../auth/session.guard';
-import { RequireVenueRole, VenueRoleGuard, notFound } from '../auth/venue-role.guard';
+import { PlatformAdminGuard } from '../auth/platform-admin.guard';
+import { ClosedLegacyGuard, RequireVenueRole, VenueRoleGuard, notFound } from '../auth/venue-role.guard';
 import { VenuesService } from './venues.service';
 
 interface AuthedRequest extends Request {
@@ -68,7 +69,7 @@ export class VenuesController {
   // ---------------------------------------------------------------------------
 
   @Post('admin/tenants')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, PlatformAdminGuard, ClosedLegacyGuard)
   async createTenant(
     @Body() body: { legal_name: string; billing_profile?: Record<string, unknown> },
   ) {
@@ -77,7 +78,7 @@ export class VenuesController {
   }
 
   @Post('admin/venues')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, PlatformAdminGuard, ClosedLegacyGuard)
   async createVenue(
     @Body()
     body: {
@@ -122,7 +123,6 @@ export class VenuesController {
       timezone?: string;
       address?: Record<string, unknown>;
       contact?: Record<string, unknown>;
-      publication_state?: 'DRAFT' | 'PENDING_APPROVAL' | 'PUBLISHED' | 'ARCHIVED';
     },
     @Res({ passthrough: true }) res: Response,
   ) {

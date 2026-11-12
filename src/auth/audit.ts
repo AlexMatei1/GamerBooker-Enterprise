@@ -14,16 +14,17 @@ import type { DbExecutor } from './auth.service';
 export async function writeAudit(
   db: DbExecutor,
   action: string,
-  actorId: string,
+  actorId: string | null,
   metadata: Record<string, unknown>,
+  scope: { tenantId?: string | null; venueId?: string | null; targetId?: string; targetType?: string; actorRole?: string } = {},
 ): Promise<void> {
   const requestId = getRequestId();
   if (!requestId) {
     throw new Error('audit write outside a request context: no request id');
   }
   await db.query(
-    'INSERT INTO audit_events (actor_id, action, metadata, request_id)' +
-      ' VALUES ($1, $2, $3::jsonb, $4)',
-    [actorId, action, JSON.stringify(metadata), requestId],
+    'INSERT INTO audit_events (actor_id, action, metadata, request_id,tenant_id,venue_id,target_id,target_type,actor_role)' +
+      ' VALUES ($1, $2, $3::jsonb, $4,$5,$6,$7,$8,$9)',
+    [actorId, action, JSON.stringify(metadata), requestId,scope.tenantId??null,scope.venueId??null,scope.targetId??null,scope.targetType??null,scope.actorRole??null],
   );
 }

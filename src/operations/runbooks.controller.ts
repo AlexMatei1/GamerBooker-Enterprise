@@ -13,7 +13,7 @@ import {
 import type { Request } from 'express';
 import type { SessionPrincipal } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
-import { RequireVenueRole, VenueRoleGuard } from '../auth/venue-role.guard';
+import { ClosedLegacyGuard, RequireVenueRole, VenueRoleGuard } from '../auth/venue-role.guard';
 import { RunbooksService } from './runbooks.service';
 import type {
   RunbookR2OrphanPaymentInput,
@@ -29,7 +29,7 @@ export class RunbooksController {
   constructor(private readonly runbooksService: RunbooksService) {}
 
   @Get('r1-double-booking-audit')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   async auditDoubleBooking(
     @Query('resource_id') resourceId: string,
     @Query('from') from: string,
@@ -39,7 +39,7 @@ export class RunbooksController {
   }
 
   @Post('r2-orphan-payment-resolution')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   @HttpCode(HttpStatus.OK)
   async resolveOrphanPayment(
     @Body() input: RunbookR2OrphanPaymentInput,
@@ -49,7 +49,7 @@ export class RunbooksController {
   }
 
   @Get('r3-receivable-reconciliation')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   async auditReceivables(
     @Query('venue_id') venueId: string,
     @Query('date') date: string,
@@ -58,7 +58,7 @@ export class RunbooksController {
   }
 
   @Get('r4-publish-diagnostics')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   async diagnosePublish(@Query('venue_id') venueId: string) {
     return this.runbooksService.diagnoseLayoutPublish(venueId);
   }
@@ -69,7 +69,7 @@ export class RunbooksController {
   }
 
   @Post('r6-out-of-stock-action')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   @HttpCode(HttpStatus.OK)
   async handleOutOfStock(@Body() input: RunbookR6OutOfStockInput) {
     return this.runbooksService.handleOutOfStockProduct(input);
@@ -86,7 +86,7 @@ export class TrainingController {
   }
 
   @Post('certifications')
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, ClosedLegacyGuard)
   @HttpCode(HttpStatus.CREATED)
   async certifyStaff(
     @Req() req: AuthedRequest,

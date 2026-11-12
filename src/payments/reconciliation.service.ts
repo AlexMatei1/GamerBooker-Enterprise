@@ -8,12 +8,61 @@ import type {
   AcknowledgeAlertInput,
 } from './refunds.types';
 
+interface OrphanIntentRow {
+  id: string;
+  amount_minor: string | number;
+  provider_ref: string;
+}
+
+interface StuckRefundRow {
+  id: string;
+  amount_minor: string | number;
+  status: 'SUBMITTED' | 'FAILED_RETRYABLE' | 'MANUAL_REVIEW';
+  retry_count: string | number | null;
+  failure_reason: string | null;
+}
+
+interface ReconciliationReportRow {
+  id: string;
+  venue_id: string;
+  opening_balance_minor: string | number;
+  online_captures_minor: string | number;
+  online_refunds_minor: string | number;
+  net_online_minor: string | number;
+  reception_cash_minor: string | number;
+  reception_card_minor: string | number;
+  voided_offline_minor: string | number;
+  total_collected_minor: string | number;
+  closing_balance_minor: string | number;
+  discrepancy_count: string | number;
+  anomalies: DailyReconciliationResult['anomalies'] | null;
+  status: DailyReconciliationResult['status'];
+  closed_by: string | null;
+  closed_at: string | Date | null;
+  notes: string | null;
+  created_at: string | Date;
+}
+
+interface ReconciliationAlertRow {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  alert_type: ReconciliationAlertItem['alert_type'];
+  severity: ReconciliationAlertItem['severity'];
+  message: string;
+  details: Record<string, unknown> | null;
+  acknowledged_at: string | Date | null;
+  acknowledged_by: string | null;
+  acknowledgement_note: string | null;
+  created_at: string | Date;
+}
+
 @Injectable()
 export class ReconciliationService {
   async generateDailyReport(
     venueId: string,
     dateStr: string,
-    staffId?: string,
+    _staffId?: string,
   ): Promise<DailyReconciliationResult> {
     const pool = getPool();
 
@@ -117,11 +166,11 @@ export class ReconciliationService {
       type: string;
       severity: string;
       message: string;
-      details?: any;
+      details?: Record<string, unknown>;
     }> = [];
 
     // Anomaly A: Orphan intents (captured without linked booking or group booking)
-    const orphanRes = await pool.query<any>(
+    const orphanRes = await pool.query<OrphanIntentRow>(
       `SELECT id, amount_minor, provider_ref
          FROM payment_intents
         WHERE venue_id = $1
@@ -141,7 +190,7 @@ export class ReconciliationService {
     }
 
     // Anomaly B: Stuck refunds
-    const stuckRes = await pool.query<any>(
+    const stuckRes = await pool.query<StuckRefundRow>(
       `SELECT id, amount_minor, status, retry_count, failure_reason
          FROM refunds
         WHERE venue_id = $1
@@ -153,7 +202,7 @@ export class ReconciliationService {
       anomalies.push({
         type: 'STUCK_REFUND',
         severity: stuck.status === 'MANUAL_REVIEW' ? 'HIGH' : 'MEDIUM',
-        message: `Refund ${stuck.id} is pending in status '${stuck.status}' (retries: ${stuck.retry_count}).`,
+        message: `Refund ${stuck.id} is pending in status '${stuck.status}' (retries: ${Number(stuck.retry_count ?? 0)}).`,
         details: {
           refund_id: stuck.id,
           status: stuck.status,
@@ -193,7 +242,7 @@ export class ReconciliationService {
     const reportStatus = anomalies.length > 0 ? 'DISCREPANCY_FLAGGED' : 'GENERATED';
 
     // Upsert into reconciliation_reports
-    const upsertRes = await pool.query<any>(
+    const upsertRes = await pool.query<ReconciliationReportRow>(
       `INSERT INTO reconciliation_reports (
          tenant_id, venue_id, report_date, opening_balance_minor, online_captures_minor,
          online_refunds_minor, net_online_minor, reception_cash_minor, reception_card_minor,
@@ -273,7 +322,7 @@ export class ReconciliationService {
     // Ensure report exists
     await this.generateDailyReport(venueId, dateStr, managerId);
 
-    const updatedRes = await pool.query<any>(
+    const updatedRes = await pool.query<ReconciliationReportRow>(
       `UPDATE reconciliation_reports
           SET status = 'RECONCILED', closed_by = $1, closed_at = now(), notes = $2, updated_at = now()
         WHERE venue_id = $3 AND report_date = $4
@@ -315,7 +364,7 @@ export class ReconciliationService {
   ): Promise<{ alerts: ReconciliationAlertItem[]; total_count: number }> {
     const pool = getPool();
     const conditions: string[] = ['venue_id = $1'];
-    const params: any[] = [venueId];
+    const params: unknown[] = [venueId];
 
     if (statusFilter === 'OPEN') {
       conditions.push('acknowledged_at IS NULL');
@@ -324,7 +373,7 @@ export class ReconciliationService {
     }
 
     const whereClause = conditions.join(' AND ');
-    const res = await pool.query<any>(
+    const res = await pool.query<ReconciliationAlertRow>(
       `SELECT * FROM reconciliation_alerts
         WHERE ${whereClause}
         ORDER BY created_at DESC`,
@@ -356,7 +405,7 @@ export class ReconciliationService {
     input?: AcknowledgeAlertInput,
   ): Promise<ReconciliationAlertItem> {
     const pool = getPool();
-    const res = await pool.query<any>(
+    const res = await pool.query<ReconciliationAlertRow>(
       `UPDATE reconciliation_alerts
           SET acknowledged_at = now(), acknowledged_by = $1, acknowledgement_note = $2
         WHERE id = $3 AND venue_id = $4

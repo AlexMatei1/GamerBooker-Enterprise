@@ -13,6 +13,7 @@ import { MFA_GATED_ROLES } from './membership.service';
 import { hash as hashPassword, verify as verifyPassword, verifyDummy } from './password';
 import { hashToken, newSessionToken, newVerificationToken } from './tokens';
 import type { DeleteReason, LoginInput, RegisterInput, SessionKind } from './validation';
+import { LocalAdminPolicy, type LocalAdminRequest } from './local-admin-policy';
 
 const GENERIC_CREDENTIALS = 'Email or password is incorrect.';
 const UNVERIFIED_MESSAGE = 'Email address is not verified.';
@@ -29,6 +30,7 @@ export interface DbExecutor {
 }
 
 export interface LoginResult {
+  localAdminPasswordOnly?: boolean;
   token: string;
   kind: SessionKind;
   userId: string;
@@ -53,6 +55,7 @@ export interface MeResult {
 }
 
 export interface SessionPrincipal {
+  localAdminPasswordOnly?: boolean;
   sessionId: string;
   userId: string;
   kind: SessionKind;
@@ -79,10 +82,11 @@ interface UserRow {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  constructor(private readonly localAdmin: LocalAdminPolicy) {}
 
   /**
-   * Creates an unverified account and one 24h email_verify token.
-   * User row and token row commit together or not at all.
+   * Creates an account. Local development accounts are immediately verified;
+   * access to company operations still requires platform approval.
    */
   async register(input: RegisterInput): Promise<{ user_id: string; verification_token?: string }> {
     const passwordHash = await hashPassword(input.password);
@@ -91,21 +95,25 @@ export class AuthService {
     let rawToken: string | undefined;
     try {
       await client.query('BEGIN');
+      const localRegistration = process.env.LOCAL_COMPANY_APPROVAL_ONLY === '1';
       const inserted = await client.query<{ id: string }>(
-        'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id',
+        localRegistration
+          ? "INSERT INTO users (email, password_hash, email_verified_at, identity_status) VALUES ($1, $2, now(), 'verified') RETURNING id"
+          : 'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id',
         [input.email, passwordHash],
       );
       userId = inserted.rows[0].id;
 
-      const token = newVerificationToken();
-      rawToken = token.token;
-      const expiresAt = new Date(Date.now() + VERIFICATION_TTL_MS);
-      await client.query(
-        'INSERT INTO verification_tokens (user_id, token_hash, purpose, expires_at) ' +
-          ' VALUES ($1, $2, $3, $4)',
-        [userId, token.hash, 'email_verify', expiresAt],
-      );
-      await writeAudit(client, 'auth.register', userId, {});
+      if (!localRegistration) {
+        const token = newVerificationToken();
+        rawToken = token.token;
+        const expiresAt = new Date(Date.now() + VERIFICATION_TTL_MS);
+        await client.query(
+          'INSERT INTO verification_tokens (user_id, token_hash, purpose, expires_at) VALUES ($1, $2, $3, $4)',
+          [userId, token.hash, 'email_verify', expiresAt],
+        );
+      }
+      await writeAudit(client, 'auth.register', userId, { local_email_verification_skipped: localRegistration });
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -114,9 +122,9 @@ export class AuthService {
       client.release();
     }
 
-    // D1: development-only delivery. Only the SHA-256 digest is stored, so the
-    // raw value cannot be read back; it is returned exactly once, here, and
-    // only when NODE_ENV=development. Never logged.
+    // Local company-approval mode skips email verification. Otherwise preserve
+    // the development-only token delivery used by the isolated auth suites.
+    if (process.env.LOCAL_COMPANY_APPROVAL_ONLY === '1') return { user_id: userId };
     if (this.isDevShortCircuit()) {
       this.logger.debug('verification token issued for user ' + userId);
       return { user_id: userId, verification_token: rawToken };
@@ -219,12 +227,13 @@ export class AuthService {
    * password and returns the identical 401 (ENG002-T05). Email-unverified is
    * only reported after the password has been proven correct.
    */
-  async login(input: LoginInput): Promise<LoginResult> {
+  async login(input: LoginInput, request?: LocalAdminRequest): Promise<LoginResult> {
     const pool = getPool();
     const found = await pool.query<UserRow>(
       'SELECT u.id, u.email, u.password_hash, u.email_verified_at,' +
-        ' EXISTS (SELECT 1 FROM venue_memberships m' +
+        ' (EXISTS (SELECT 1 FROM venue_memberships m' +
         '   WHERE m.user_id = u.id AND m.active = true AND m.role = ANY($2::text[]))' +
+        ' OR EXISTS (SELECT 1 FROM platform_grants g WHERE g.user_id=u.id AND g.revoked_at IS NULL))' +
         '   AS mfa_gated,' +
         ' EXISTS (SELECT 1 FROM user_mfa_factors f' +
         "   WHERE f.user_id = u.id AND f.type = 'totp' AND f.confirmed_at IS NOT NULL)" +
@@ -233,7 +242,7 @@ export class AuthService {
         "   WHERE f.user_id = u.id AND f.type = 'totp')" +
         '   AS mfa_locked_until' +
         ' FROM users u' +
-        ' WHERE lower(u.email) = $1 AND u.deleted_at IS NULL',
+        " WHERE lower(u.email) = $1 AND u.deleted_at IS NULL AND u.identity_status<>'suspended'",
       [input.email, MFA_GATED_ROLES],
     );
     const user = found.rows[0];
@@ -255,19 +264,12 @@ export class AuthService {
     }
 
     // Checked only after the password is correct, so a lockout never becomes an
-    // account-existence oracle. A fresh login does not escape the lock: the
-    // counter lives on the factor, not on the pending session. It applies to an
-    // unconfirmed factor too, otherwise a caller could skip the lock by starting
-    // enrolment again.
-    if (user.mfa_locked_until) {
-      const lockedMs = new Date(user.mfa_locked_until).getTime() - Date.now();
-      if (lockedMs > 0) {
-        throw accountLocked(Math.max(1, Math.ceil(lockedMs / 1000)));
-      }
-    }
-
-    const mfaPending = user.mfa_enrolled || user.mfa_gated;
-    const mfaState = mfaPending ? 'pending' : 'active';
+    // account-existence oracle. Ordinary MFA logins cannot escape a factor lock.
+    // The explicit local password path does not use or modify the TOTP factor.
+    let localPassword = false;
+    let mfaPending = user.mfa_enrolled || user.mfa_gated;
+    let mfaState: 'pending' | 'active' = mfaPending ? 'pending' : 'active';
+    let sessionId: string;
 
     // A fresh token on every login: session fixation is impossible because no
     // caller-supplied value is ever adopted (ENG002-T06).
@@ -278,12 +280,20 @@ export class AuthService {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
+      await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [user.id]);
+      localPassword = await this.localAdmin.loginAllowed(user.id, input.kind, request, client);
+      if (localPassword) { mfaPending = false; mfaState = 'active'; }
+      if (!localPassword && user.mfa_locked_until) {
+        const lockedMs = new Date(user.mfa_locked_until).getTime() - Date.now();
+        if (lockedMs > 0) throw accountLocked(Math.max(1, Math.ceil(lockedMs / 1000)));
+      }
+      const inserted = await client.query<{id: string}>(
         'INSERT INTO sessions (user_id, token_hash, kind, mfa_state, idle_expires_at, absolute_expires_at) ' +
-          ' VALUES ($1, $2, $3, $4, $5, $6)',
+          ' VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
         [user.id, minted.hash, input.kind, mfaState, idleExpiresAt, absoluteExpiresAt],
       );
-      await writeAudit(client, 'auth.login', user.id, { kind: input.kind, mfa_state: mfaState });
+      sessionId = inserted.rows[0].id;
+      await writeAudit(client, 'auth.login', user.id, { kind: input.kind, mfa_state: mfaState, ...(localPassword ? {auth_mode: 'local_admin_password'} : {}) });
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -292,7 +302,10 @@ export class AuthService {
       client.release();
     }
 
+    if (localPassword) this.localAdmin.rememberFreshLogin(sessionId!, user.id, absoluteExpiresAt);
+
     return {
+      localAdminPasswordOnly: localPassword,
       token: minted.token,
       kind: input.kind,
       userId: user.id,
@@ -340,8 +353,13 @@ export class AuthService {
       throw new AuthHttpError(HttpStatus.UNAUTHORIZED, 'AUTH_REQUIRED', REQUIRED_MESSAGE);
     }
     const memberships = await pool.query<MeMembership>(
-      'SELECT tenant_id, venue_id, role FROM venue_memberships' +
-        ' WHERE user_id = $1 AND active = true ORDER BY venue_id',
+      `SELECT m.tenant_id,m.venue_id,m.role FROM venue_memberships m
+       JOIN venues v ON v.id=m.venue_id AND v.tenant_id=m.tenant_id
+       JOIN tenants t ON t.id=v.tenant_id AND t.state='active'
+       WHERE m.user_id=$1 AND m.active=true AND m.role IN ('OWNER','VENUE_MANAGER','RECEPTION','BAR_STAFF')
+       AND NOT EXISTS (SELECT 1 FROM platform_grants g WHERE g.user_id=m.user_id AND g.revoked_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM cafe_applications a WHERE a.applicant_user_id=m.user_id AND a.venue_id=m.venue_id AND a.access_suspended=true)
+       ORDER BY m.venue_id`,
       [principal.userId],
     );
     return { user_id: user.id, email: user.email, memberships: memberships.rows };
@@ -436,6 +454,44 @@ export class AuthService {
       });
       await client.query('COMMIT');
       return { sessionsRevoked };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async changePassword(principal: SessionPrincipal, currentPassword: string, newPassword: string): Promise<void> {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query<{ id: string; password_hash: string | null }>(
+        'SELECT id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [principal.userId],
+      );
+      const user = found.rows[0];
+      if (!user) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw new AuthHttpError(HttpStatus.UNAUTHORIZED, 'AUTH_REQUIRED', REQUIRED_MESSAGE);
+      }
+
+      const ok = user.password_hash
+        ? await verifyPassword(user.password_hash, currentPassword)
+        : await verifyDummy();
+      if (!ok) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw invalidCredentials();
+      }
+
+      const newHash = await hashPassword(newPassword);
+      await client.query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1', [principal.userId, newHash]);
+
+      await writeAudit(client, 'auth.password_changed', principal.userId, {
+        kind: principal.kind,
+      });
+
+      await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw err;

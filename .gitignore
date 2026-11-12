@@ -10,6 +10,7 @@ out/
 .next/
 coverage/
 *.tsbuildinfo
+release/
 
 # Environment and secrets - never commit
 .env
@@ -26,6 +27,7 @@ secrets/
 logs/
 npm-debug.log*
 .opencode/local/
+.local-auth/
 
 # Editor and OS
 .vscode/*
@@ -39,6 +41,19 @@ Thumbs.db
 .tmp/
 tmp/
 *.tmp
+scratch/
+__pycache__/
+*.pyc
+
+# Flutter local artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+apps/flutter-mobile/.dart_tool/
+apps/flutter-mobile/.flutter-plugins
+apps/flutter-mobile/.flutter-plugins-dependencies
+apps/flutter-mobile/android/local.properties
+apps/flutter-mobile/build/
 
 # Prisma local artifacts
 prisma/dev.db

@@ -45,6 +45,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -56,7 +57,7 @@ describe('ENG-102 Policy Hierarchy, Validator, and Snapshot Engine', () => {
   let foreignFixture: Fixture;
 
   beforeAll(async () => {
-    app = await startTestApp('eng102');
+    app = await startTestApp('eng102', { browserClient: true });
     ownerFixture = await createTenantAndVenue(app, 'Nexus Gaming SRL', 'Nexus Hub', 'OWNER');
     foreignFixture = await createTenantAndVenue(app, 'Arcade Pro SRL', 'Arcade Lounge', 'OWNER');
   });

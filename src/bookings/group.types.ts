@@ -52,6 +52,65 @@ export interface GroupParticipantDetail {
   accepted_at: string | null;
 }
 
+/**
+ * A `timestamptz` column as `pg` hands it back: a `Date` for a real column,
+ * but an ISO string when a query aliases/casts it to text (`expires_at as
+ * group_expires_at`) or when a test double supplies the row directly.
+ */
+export type PgTimestamp = Date | string;
+
+export interface GroupBookingRow {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  organizer_id: string;
+  quote_id: string;
+  hold_id: string | null;
+  booking_id: string | null;
+  mode: GroupBookingMode;
+  status: GroupBookingStatus;
+  total_minor: string;
+  due_now_minor: string;
+  balance_minor: string;
+  currency: string;
+  expires_at: PgTimestamp;
+  created_at: PgTimestamp;
+}
+
+/** `group_participants` on its own: exactly the columns of that table. */
+export interface GroupParticipantRow {
+  id: string;
+  group_booking_id: string;
+  user_id: string | null;
+  invited_email: string | null;
+  invitation_token: string | null;
+  is_organizer: boolean;
+  assigned_resource_id: string | null;
+  share_total_minor: string;
+  share_due_now_minor: string;
+  share_balance_minor: string;
+  share_paid_minor: string;
+  status: ParticipantStatus;
+  token_expires_at: PgTimestamp;
+  accepted_at: PgTimestamp | null;
+  created_at: PgTimestamp;
+  updated_at: PgTimestamp;
+}
+
+/**
+ * `group_participants` joined to `group_bookings` for tenant/venue scoping.
+ * Tenant and venue live on the group row, never on the participant row.
+ */
+export interface GroupParticipantWithGroupRow extends GroupParticipantRow {
+  tenant_id: string;
+  venue_id: string;
+}
+
+/** Same join, additionally exposing the group's expiry for TTL checks. */
+export interface GroupParticipantInvitationRow extends GroupParticipantWithGroupRow {
+  group_expires_at: PgTimestamp;
+}
+
 export interface GroupBookingDetail {
   id: string;
   tenant_id: string;

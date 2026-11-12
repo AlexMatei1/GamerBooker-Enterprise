@@ -12,6 +12,30 @@ export interface SoloCheckoutResult {
   qr_expires_at: string;
 }
 
+export interface SoloPaymentIntentResult {
+  intent_id: string;
+  provider_ref: string;
+  client_secret?: string;
+  amount_minor: number;
+  currency: string;
+  hold_id: string;
+  status: string;
+  hold_expires_at: string;
+}
+
+/**
+ * Customer-safe payment status. It is intentionally sourced from the server
+ * record updated by the verified PSP webhook, rather than a mobile callback.
+ */
+export interface SoloPaymentIntentStatusResult {
+  intent_id: string;
+  hold_id: string;
+  amount_minor: number;
+  currency: string;
+  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  updated_at: string;
+}
+
 export interface QrTokenData {
   token: string;
   public_code: string;

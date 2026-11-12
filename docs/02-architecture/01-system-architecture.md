@@ -29,7 +29,7 @@ flowchart LR
 ```
 
 ## Stack concret propus
-- Mobile: React Native + TypeScript (alternativ Flutter); linkuri app/deep-link/QR.
+- Mobile: Flutter pentru clientul Android/iOS; linkuri app/deep-link/QR. Preview-ul local Android folosește momentan date demonstrative.
 - Dashboard: Next.js/React + TypeScript, canvas de layout cu library 2D robustă; preview read-only public.
 - Backend: NestJS/TypeScript sau framework echivalent, OpenAPI, validation schema, RBAC.
 - DB: PostgreSQL 16+ cu range constraints, migrations, row/tenant guard; Redis doar pentru cache/rate-limit, **nu** sursă pentru bookings sau sold.

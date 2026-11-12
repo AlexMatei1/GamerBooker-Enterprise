@@ -8,7 +8,6 @@ import type {
   BulkImportDto,
   BulkUpdateDto,
   BulkUpdateResult,
-  CreateResourceDto,
   UpdateResourceDto,
 } from './resource.types';
 

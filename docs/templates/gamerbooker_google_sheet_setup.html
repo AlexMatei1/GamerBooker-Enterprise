@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GamerBooker · Template Oficial Google Sheet Înscriere Săli Partenere</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #12121a;
+      --surface-elevated: #1a1a26;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f4f4f5;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --emerald: #10b981;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 32px 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 10px 0;
+      font-size: 26px;
+      color: #fff;
+    }
+    p {
+      color: var(--text-muted);
+      margin: 0 0 16px 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #a5b4fc;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      background: var(--surface-elevated);
+      color: #e2e8f0;
+      padding: 12px 16px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+    }
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: #fff;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      background: var(--primary);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .btn-secondary {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .step-box {
+      background: var(--surface-elevated);
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .step-box strong {
+      color: #fff;
+      display: block;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="badge">TEMPLATE OFICIAL · ONBOARDING SĂLI GAMERBOOKER</div>
+      <h1>Model Google Sheet pentru Parteneri (Internet Cafe & Arene Gaming)</h1>
+      <p>
+        Acest tabel conține toate coloanele necesare pentru ca administratorul platformei să poată configura complet sala în sistem:
+        date juridice, tarife orare (Standard, VIP, Racing, Console), orar de funcționare și numărul de stații.
+      </p>
+
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a class="btn" href="https://docs.google.com/spreadsheets/create" target="_blank" rel="noreferrer noopener">
+          Deschide o foaie nouă Google Sheets ↗
+        </a>
+        <a class="btn btn-secondary" href="gamerbooker_cafe_intake_sheet.csv" download>
+          Descarcă fișierul CSV
+        </a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size: 18px; margin-top: 0;">Coloane și Date Demonstrative</h2>
+      <p>Copiază sau importă acest antet în Google Sheets pentru ca sincronizarea automată cu GamerBooker să funcționeze instant:</p>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Denumire Juridică Firmă</th>
+              <th>Nume Cafenea / Sală</th>
+              <th>Oraș</th>
+              <th>Adresă Email Contact</th>
+              <th>Fus Orar</th>
+              <th>CUI / CIF</th>
+              <th>Tarif PC Standard</th>
+              <th>Tarif PC VIP</th>
+              <th>Tarif Sim Racing</th>
+              <th>Tarif Consolă PS5</th>
+              <th>Program L-V</th>
+              <th>Program Weekend</th>
+              <th>Stații PC</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Nexus Gaming Arena SRL</td>
+              <td>Nexus Gamers Pub</td>
+              <td>București</td>
+              <td>contact@nexusgamers.ro</td>
+              <td>Europe/Bucharest</td>
+              <td>RO34567890</td>
+              <td>16.00 RON/h</td>
+              <td>24.00 RON/h</td>
+              <td>35.00 RON/h</td>
+              <td>20.00 RON/h</td>
+              <td>10:00 - 02:00</td>
+              <td>Non-Stop 24/7</td>
+              <td>40 stații</td>
+            </tr>
+            <tr>
+              <td>Cyber Zone Entertainment SRL</td>
+              <td>Cyber Hub Iași</td>
+              <td>Iași</td>
+              <td>contact@cyberhubiasi.ro</td>
+              <td>Europe/Bucharest</td>
+              <td>RO41238910</td>
+              <td>14.00 RON/h</td>
+              <td>20.00 RON/h</td>
+              <td>30.00 RON/h</td>
+              <td>18.00 RON/h</td>
+              <td>12:00 - 00:00</td>
+              <td>10:00 - 04:00</td>
+              <td>28 stații</td>
+            </tr>
+            <tr>
+              <td>Discovery Esports Club SRL</td>
+              <td>Discovery Arena Cluj</td>
+              <td>Cluj-Napoca</td>
+              <td>office@discoveryarena.ro</td>
+              <td>Europe/Bucharest</td>
+              <td>RO29876123</td>
+              <td>18.00 RON/h</td>
+              <td>26.00 RON/h</td>
+              <td>40.00 RON/h</td>
+              <td>22.00 RON/h</td>
+              <td>Non-Stop 24/7</td>
+              <td>Non-Stop 24/7</td>
+              <td>50 stații</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="steps">
+        <div class="step-box">
+          <strong>Pasul 1: Creează Foaia</strong>
+          Apasă pe butonul de mai sus pentru a deschide Google Sheets și lipește antetul cu coloanele.
+        </div>
+        <div class="step-box">
+          <strong>Pasul 2: Partajează / Publică</strong>
+          Mergi în meniul Google Sheets: <em>File &rarr; Share &rarr; Publish to web</em> și alege formatul <strong>CSV</strong>.
+        </div>
+        <div class="step-box">
+          <strong>Pasul 3: Sincronizează</strong>
+          Adaugă linkul obținut în variabila <code>CAFE_INTAKE_CSV_URL</code> și apasă <strong>Sincronizează cererile</strong> din consola de administrare.
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

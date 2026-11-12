@@ -78,7 +78,7 @@ export interface DailyReconciliationResult {
     type: string;
     severity: string;
     message: string;
-    details?: any;
+    details?: unknown;
   }>;
   status: 'GENERATED' | 'RECONCILED' | 'DISCREPANCY_FLAGGED';
   closed_by?: string | null;

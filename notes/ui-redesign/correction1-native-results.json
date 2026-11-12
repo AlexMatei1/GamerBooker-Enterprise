@@ -1,0 +1,43 @@
+{
+  "checks": [
+    {
+      "name": "Current-source update install Success",
+      "result": "PASS"
+    },
+    {
+      "name": "Flutter preview opened",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj reserve own selection",
+      "result": "PASS"
+    },
+    {
+      "name": "Cluj checkout150 and next day03",
+      "result": "PASS"
+    },
+    {
+      "name": "Checkout to Pass starts at top",
+      "result": "PASS"
+    },
+    {
+      "name": "Native extension advances next day04",
+      "result": "PASS"
+    },
+    {
+      "name": "Tab switch Reserve starts at top",
+      "result": "PASS"
+    },
+    {
+      "name": "Reserve to checkout starts at top",
+      "result": "PASS"
+    },
+    {
+      "name": "Bar tab starts at top",
+      "result": "PASS"
+    }
+  ],
+  "serial": "CNXNU20922109640",
+  "apkSha256": "7579e995973f0c822f3e3c90019752b7c0672252336264c1132cda24609884cf",
+  "apkMtime": 1793846663.176404
+}

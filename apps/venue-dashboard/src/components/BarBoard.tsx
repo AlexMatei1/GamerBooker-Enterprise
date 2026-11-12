@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   UtensilsCrossed,
   Clock,
@@ -8,10 +8,10 @@ import {
   Barcode,
   X,
   KeyRound,
-} from 'lucide-react';
-import type { BarOrder, VenueRole } from '../types/dashboard';
-import { api } from '../api/client';
-import { realtime } from '../services/realtime';
+} from "lucide-react";
+import type { BarOrder, VenueRole } from "../types/dashboard";
+import { api } from "../api/client";
+import { realtime } from "../services/realtime";
 
 interface BarBoardProps {
   venueId: string;
@@ -20,9 +20,11 @@ interface BarBoardProps {
 
 export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
   const [orders, setOrders] = useState<BarOrder[]>([]);
-  const [selectedOrderForAgeCheck, setSelectedOrderForAgeCheck] = useState<BarOrder | null>(null);
-  const [selectedOrderForPickup, setSelectedOrderForPickup] = useState<BarOrder | null>(null);
-  const [pickupCodeInput, setPickupCodeInput] = useState('');
+  const [selectedOrderForAgeCheck, setSelectedOrderForAgeCheck] =
+    useState<BarOrder | null>(null);
+  const [selectedOrderForPickup, setSelectedOrderForPickup] =
+    useState<BarOrder | null>(null);
+  const [pickupCodeInput, setPickupCodeInput] = useState("");
   const [pickupCodeError, setPickupCodeError] = useState<string | null>(null);
   const [ageCheckConfirmed, setAgeCheckConfirmed] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -31,10 +33,16 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
     loadOrders();
     const interval = setInterval(loadOrders, 10000);
 
-    const unsubscribe = realtime.subscribe('ORDER_CREATED', (payload) => {
+    const unsubscribe = realtime.subscribe("ORDER_CREATED", (payload) => {
+      if (payload.venueId !== venueId) return;
       if (payload.data && payload.data.order) {
-        setOrders((prev) => [payload.data.order, ...prev.filter((o) => o.id !== payload.data.order.id)]);
-        setToastMessage(`🔔 Comandă nouă (#${payload.data.order.public_code || 'NOW'}): ${payload.data.order.station_id || 'Bar'}`);
+        setOrders((prev) => [
+          payload.data.order,
+          ...prev.filter((o) => o.id !== payload.data.order.id),
+        ]);
+        setToastMessage(
+          `🔔 Comandă nouă (#${payload.data.order.public_code || "NOW"}): ${payload.data.order.station_id || "Bar"}`,
+        );
         setTimeout(() => setToastMessage(null), 4000);
       }
     });
@@ -50,12 +58,12 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
     setOrders(list);
   }
 
-  function advanceStatus(orderId: string, nextStatus: BarOrder['status']) {
+  function advanceStatus(orderId: string, nextStatus: BarOrder["status"]) {
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
     );
-    realtime.broadcast({
-      type: 'ORDER_STATUS_CHANGED',
+    realtime.broadcastLocal({
+      type: "ORDER_STATUS_CHANGED",
       venueId,
       data: { orderId, nextStatus },
     });
@@ -69,26 +77,33 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
       return;
     }
 
-    if (order.fulfillment_mode === 'BAR_PICKUP' && order.pickup_code) {
+    if (order.fulfillment_mode === "BAR_PICKUP" && order.pickup_code) {
       setSelectedOrderForPickup(order);
-      setPickupCodeInput('');
+      setPickupCodeInput("");
       setPickupCodeError(null);
       return;
     }
 
-    advanceStatus(order.id, 'HANDED_OFF');
+    advanceStatus(order.id, "HANDED_OFF");
   }
 
   function handleVerifyPickupCode() {
     if (!selectedOrderForPickup) return;
-    if (pickupCodeInput.trim().toUpperCase() !== selectedOrderForPickup.pickup_code) {
-      setPickupCodeError(`Code mismatch! Expected "${selectedOrderForPickup.pickup_code}".`);
+    if (
+      pickupCodeInput.trim().toUpperCase() !==
+      selectedOrderForPickup.pickup_code
+    ) {
+      setPickupCodeError(
+        `Code mismatch! Expected "${selectedOrderForPickup.pickup_code}".`,
+      );
       return;
     }
 
-    advanceStatus(selectedOrderForPickup.id, 'HANDED_OFF');
+    advanceStatus(selectedOrderForPickup.id, "HANDED_OFF");
     setSelectedOrderForPickup(null);
-    setToastMessage(`Crockford code verified for #${selectedOrderForPickup.public_code}.`);
+    setToastMessage(
+      `Crockford code verified for #${selectedOrderForPickup.public_code}.`,
+    );
     setTimeout(() => setToastMessage(null), 3000);
   }
 
@@ -98,18 +113,26 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
     setOrders((prev) =>
       prev.map((o) =>
         o.id === targetOrderId
-          ? { ...o, status: 'HANDED_OFF', age_verified_by: 'STAFF_VISUAL_CHECK' }
+          ? {
+              ...o,
+              status: "HANDED_OFF",
+              age_verified_by: "STAFF_VISUAL_CHECK",
+            }
           : o,
       ),
     );
-    realtime.broadcast({
-      type: 'ORDER_STATUS_CHANGED',
+    realtime.broadcastLocal({
+      type: "ORDER_STATUS_CHANGED",
       venueId,
-      data: { orderId: targetOrderId, nextStatus: 'HANDED_OFF', ageVerified: true },
+      data: {
+        orderId: targetOrderId,
+        nextStatus: "HANDED_OFF",
+        ageVerified: true,
+      },
     });
     setSelectedOrderForAgeCheck(null);
     setAgeCheckConfirmed(false);
-    setToastMessage('✓ Vârstă verificată vizual conform Legii 42/2024. Comandă predată.');
+    setToastMessage("Verificare vizuală și predare finalizate.");
     setTimeout(() => setToastMessage(null), 3500);
   }
 
@@ -119,26 +142,48 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
     setOrders((prev) =>
       prev.map((o) =>
         o.id === targetOrderId
-          ? { ...o, status: 'CANCELLED', age_verified_by: 'REFUSED_UNDERAGE' }
+          ? { ...o, status: "CANCELLED", age_verified_by: "REFUSED_UNDERAGE" }
           : o,
       ),
     );
-    realtime.broadcast({
-      type: 'ORDER_STATUS_CHANGED',
+    realtime.broadcastLocal({
+      type: "ORDER_STATUS_CHANGED",
       venueId,
-      data: { orderId: targetOrderId, nextStatus: 'CANCELLED', reason: 'REFUSED_UNDERAGE' },
+      data: {
+        orderId: targetOrderId,
+        nextStatus: "CANCELLED",
+        reason: "REFUSED_UNDERAGE",
+      },
     });
     setSelectedOrderForAgeCheck(null);
     setAgeCheckConfirmed(false);
-    setToastMessage('⚠️ Comandă refuzată: Clientul este minor. Banii au fost returnați.');
+    setToastMessage(
+      "Servire refuzată — client sub limita de vârstă.",
+    );
     setTimeout(() => setToastMessage(null), 4000);
   }
 
-  const columns: { id: BarOrder['status']; label: string; count: number }[] = [
-    { id: 'PLACED', label: 'Placed', count: orders.filter((o) => o.status === 'PLACED').length },
-    { id: 'PREPARING', label: 'Preparing', count: orders.filter((o) => o.status === 'PREPARING').length },
-    { id: 'READY', label: 'Ready for Pickup', count: orders.filter((o) => o.status === 'READY').length },
-    { id: 'HANDED_OFF', label: 'Completed', count: orders.filter((o) => o.status === 'HANDED_OFF').length },
+  const columns: { id: BarOrder["status"]; label: string; count: number }[] = [
+    {
+      id: "PLACED",
+      label: "Placed",
+      count: orders.filter((o) => o.status === "PLACED").length,
+    },
+    {
+      id: "PREPARING",
+      label: "Preparing",
+      count: orders.filter((o) => o.status === "PREPARING").length,
+    },
+    {
+      id: "READY",
+      label: "Ready for Pickup",
+      count: orders.filter((o) => o.status === "READY").length,
+    },
+    {
+      id: "HANDED_OFF",
+      label: "Completed",
+      count: orders.filter((o) => o.status === "HANDED_OFF").length,
+    },
   ];
 
   return (
@@ -147,19 +192,23 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
       <div className="panel px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-xs text-zinc-200">F&B Dispatch & Order Fulfillment</span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60">
-              Law 42/2024 Enforced
+            <span className="font-semibold text-xs text-zinc-200">
+              F&B Dispatch & Order Fulfillment
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-950/60 text-indigo-400 border border-indigo-800/60">
+              Verificare la servire
             </span>
           </div>
           <p className="text-[11px] text-zinc-500 mt-0.5">
-            Real-time station delivery & bar pickup tickets &bull; 4-character Crockford verification
+            Comenzi la loc / ridicare &bull; Verificare cod Crockford
           </p>
         </div>
 
         <div className="text-xs text-zinc-400 font-mono">
           <span>Active Pipeline: </span>
-          <span className="font-semibold text-zinc-200">{orders.filter((o) => o.status !== 'HANDED_OFF').length} Orders</span>
+          <span className="font-semibold text-zinc-200">
+            {orders.filter((o) => o.status !== "HANDED_OFF").length} Orders
+          </span>
         </div>
       </div>
 
@@ -175,9 +224,14 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
         {columns.map((col) => {
           const colOrders = orders.filter((o) => o.status === col.id);
           return (
-            <div key={col.id} className="panel p-3 flex flex-col space-y-2.5 min-h-[500px]">
+            <div
+              key={col.id}
+              className="panel p-3 flex flex-col space-y-2.5 min-h-[500px]"
+            >
               <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-                <span className="text-xs font-medium text-zinc-300">{col.label}</span>
+                <span className="text-xs font-medium text-zinc-300">
+                  {col.label}
+                </span>
                 <span className="font-mono text-[11px] text-zinc-500 font-medium bg-zinc-900 px-2 py-0.5 rounded">
                   {colOrders.length}
                 </span>
@@ -200,11 +254,14 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                             #{order.public_code}
                           </span>
                           <div className="text-[10px] text-zinc-500 font-mono">
-                            {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(order.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </div>
                         </div>
 
-                        {order.fulfillment_mode === 'AT_STATION' ? (
+                        {order.fulfillment_mode === "AT_STATION" ? (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-300 bg-zinc-800 border border-white/[0.04]">
                             Seat {order.target_resource_name}
                           </span>
@@ -218,9 +275,14 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                       {/* Items */}
                       <div className="space-y-1 text-xs border-y border-white/[0.04] py-1.5">
                         {order.items.map((it) => (
-                          <div key={it.id} className="flex justify-between items-center text-zinc-300 text-[11px]">
+                          <div
+                            key={it.id}
+                            className="flex justify-between items-center text-zinc-300 text-[11px]"
+                          >
                             <span>
-                              <span className="text-zinc-500 font-mono mr-1">{it.quantity}&times;</span>
+                              <span className="text-zinc-500 font-mono mr-1">
+                                {it.quantity}&times;
+                              </span>
                               {it.title}
                             </span>
                             <span className="font-mono text-zinc-400 text-[10px]">
@@ -233,9 +295,11 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                       {order.age_verification_required && (
                         <div className="p-1.5 rounded bg-amber-950/30 border border-amber-900/50 text-[10px] text-amber-300">
                           {order.age_verified_by ? (
-                            <span className="text-emerald-400">✓ {order.age_verified_by}</span>
+                            <span className="text-emerald-400">
+                              ✓ {order.age_verified_by}
+                            </span>
                           ) : (
-                            'Law 42/2024: 18+ ID Check Required'
+                            "Verifică eligibilitatea conform regulilor locației · demo"
                           )}
                         </div>
                       )}
@@ -246,23 +310,25 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                         </span>
 
                         <div className="flex gap-1">
-                          {order.status === 'PLACED' && (
+                          {order.status === "PLACED" && (
                             <button
-                              onClick={() => advanceStatus(order.id, 'PREPARING')}
+                              onClick={() =>
+                                advanceStatus(order.id, "PREPARING")
+                              }
                               className="btn-secondary text-[11px] py-1 px-2.5"
                             >
                               Prep &rarr;
                             </button>
                           )}
-                          {order.status === 'PREPARING' && (
+                          {order.status === "PREPARING" && (
                             <button
-                              onClick={() => advanceStatus(order.id, 'READY')}
+                              onClick={() => advanceStatus(order.id, "READY")}
                               className="btn-secondary text-[11px] py-1 px-2.5"
                             >
                               Ready &rarr;
                             </button>
                           )}
-                          {order.status === 'READY' && (
+                          {order.status === "READY" && (
                             <button
                               onClick={() => handleStartHandoff(order)}
                               className="btn-primary text-[11px] py-1 px-3"
@@ -270,8 +336,10 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                               Handoff
                             </button>
                           )}
-                          {order.status === 'HANDED_OFF' && (
-                            <span className="text-[10px] text-zinc-500 font-mono">Settled</span>
+                          {order.status === "HANDED_OFF" && (
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              Settled
+                            </span>
                           )}
                         </div>
                       </div>
@@ -291,16 +359,25 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-zinc-400" />
-                <h4 className="font-semibold text-xs text-zinc-200">Verify Pickup Code</h4>
+                <h4 className="font-semibold text-xs text-zinc-200">
+                  Verify Pickup Code
+                </h4>
               </div>
-              <button onClick={() => setSelectedOrderForPickup(null)} className="text-zinc-500 hover:text-zinc-300">
+              <button
+                onClick={() => setSelectedOrderForPickup(null)}
+                className="text-zinc-500 hover:text-zinc-300"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="text-center space-y-2">
               <p className="text-xs text-zinc-400">
-                Enter 4-character customer code for order <strong className="text-zinc-200">#{selectedOrderForPickup.public_code}</strong>.
+                Enter 4-character customer code for order{" "}
+                <strong className="text-zinc-200">
+                  #{selectedOrderForPickup.public_code}
+                </strong>
+                .
               </p>
               <input
                 type="text"
@@ -314,9 +391,14 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                 className="w-36 mx-auto text-center font-mono font-bold text-xl tracking-widest bg-zinc-900 border border-white/[0.12] rounded-lg py-2 text-zinc-100 focus:outline-none focus:border-indigo-500 uppercase"
               />
               <div className="text-[10px] text-zinc-500 font-mono">
-                Customer ticket code: <strong>{selectedOrderForPickup.pickup_code}</strong>
+                Customer ticket code:{" "}
+                <strong>{selectedOrderForPickup.pickup_code}</strong>
               </div>
-              {pickupCodeError && <div className="text-xs text-rose-400 font-medium">{pickupCodeError}</div>}
+              {pickupCodeError && (
+                <div className="text-xs text-rose-400 font-medium">
+                  {pickupCodeError}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-1">
@@ -344,8 +426,12 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
             <div className="flex items-center gap-2.5 pb-2 border-b border-white/[0.08]">
               <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
-                <h4 className="font-semibold text-xs text-zinc-100">Law 42/2024 Statutory Age Verification</h4>
-                <p className="text-[10px] text-zinc-400">Mandatory verification for energy drinks & alcohol</p>
+                <h4 className="font-semibold text-xs text-zinc-100">
+                  Verificare conformitate la servire
+                </h4>
+                <p className="text-[10px] text-zinc-400">
+                  Verificare vârstă conform normelor legale în vigoare
+                </p>
               </div>
             </div>
 
@@ -357,11 +443,13 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                 {selectedOrderForAgeCheck.items
                   .filter((i) => i.age_restricted)
                   .map((i) => (
-                    <li key={i.id}>{i.quantity}&times; {i.title}</li>
+                    <li key={i.id}>
+                      {i.quantity}&times; {i.title}
+                    </li>
                   ))}
               </ul>
               <p className="text-[11px] text-zinc-400 pt-1">
-                Conform legii, este suficientă <strong>prezentarea vizuală a actului de identitate</strong> pentru confirmarea anului nașterii. Reținerea buletinului la recepție este interzisă prin lege.
+                Personalul recepției / barului trebuie să solicite actul de identitate înainte de predarea comenzii.
               </p>
             </div>
 
@@ -373,7 +461,7 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                 className="mt-0.5 rounded border-zinc-700 text-amber-500 bg-zinc-950 w-4 h-4 cursor-pointer"
               />
               <span className="text-xs font-medium text-zinc-200">
-                Confirm că am inspectat vizual actul clientului și acesta are vârsta legală (16+ / 18+ ani).
+                Confirm verificarea actului de identitate al clientului.
               </span>
             </label>
 
@@ -388,7 +476,7 @@ export const BarBoard: React.FC<BarBoardProps> = ({ venueId, role }) => {
                 onClick={handleRefuseAgeVerification}
                 className="py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold transition-colors"
               >
-                ✗ Client Minor (Refuză &amp; Returnează)
+                Refuză servirea
               </button>
               <button
                 onClick={confirmAgeVerification}

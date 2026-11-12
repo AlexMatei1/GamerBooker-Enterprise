@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
-import type { VenueRole } from '../auth/membership.service';
+import { VENUE_ROLES, type VenueRole } from '../auth/membership.service';
 
 export interface TenantRow {
   id: string;
@@ -169,9 +169,11 @@ export class VenuesService {
       timezone?: string;
       address?: Record<string, unknown>;
       contact?: Record<string, unknown>;
-      publication_state?: 'DRAFT' | 'PENDING_APPROVAL' | 'PUBLISHED' | 'ARCHIVED';
     },
   ): Promise<VenueDetail> {
+    if (Object.prototype.hasOwnProperty.call(updates, 'publication_state')) {
+      throw badRequest('publication_state must be changed through the dedicated publication workflow.');
+    }
     const current = await this.getVenueDetail(venueId);
     const name = updates.name !== undefined ? updates.name.trim() : current.name;
     if (!name) {
@@ -181,16 +183,15 @@ export class VenuesService {
     const timezone = updates.timezone !== undefined ? updates.timezone : current.timezone;
     const address = updates.address !== undefined ? updates.address : current.address;
     const contact = updates.contact !== undefined ? updates.contact : current.contact;
-    const publicationState = updates.publication_state !== undefined ? updates.publication_state : current.publication_state;
 
     const pool = getPool();
     const res = await pool.query<VenueDetail>(
       `UPDATE venues
        SET name = $1, slug = $2, timezone = $3, address = $4::jsonb, contact = $5::jsonb,
-           publication_state = $6, updated_at = now()
-       WHERE id = $7
+           updated_at = now()
+       WHERE id = $6
        RETURNING id, tenant_id, name, slug, timezone, address, contact, publication_state, created_at, updated_at`,
-      [name, slug, timezone, JSON.stringify(address), JSON.stringify(contact), publicationState, venueId],
+      [name, slug, timezone, JSON.stringify(address), JSON.stringify(contact), venueId],
     );
     return res.rows[0];
   }
@@ -399,8 +400,9 @@ export class VenuesService {
     tenantId: string,
     data: { userId: string; role: VenueRole },
   ): Promise<MembershipDetail> {
+    if (!VENUE_ROLES.includes(data.role)) throw badRequest('Invalid venue role.');
     const pool = getPool();
-    const userCheck = await pool.query('SELECT id, email FROM users WHERE id = $1 AND deleted_at IS NULL', [data.userId]);
+    const userCheck = await pool.query("SELECT id, email FROM users WHERE id = $1 AND deleted_at IS NULL AND email_verified_at IS NOT NULL AND identity_status='verified'", [data.userId]);
     if (userCheck.rowCount === 0) {
       throw badRequest('User not found.');
     }
@@ -421,6 +423,8 @@ export class VenuesService {
     membershipId: string,
     updates: { active?: boolean; role?: VenueRole },
   ): Promise<MembershipDetail> {
+    if (updates.role !== undefined && !VENUE_ROLES.includes(updates.role)) throw badRequest('Invalid venue role.');
+    if (updates.active !== undefined && typeof updates.active !== 'boolean') throw badRequest('active must be boolean.');
     const pool = getPool();
     const found = await pool.query<MembershipDetail>(
       'SELECT id, user_id, venue_id, tenant_id, role, active FROM venue_memberships WHERE id = $1 AND venue_id = $2',
@@ -430,6 +434,7 @@ export class VenuesService {
       throw notFound();
     }
     const current = found.rows[0];
+    if (!VENUE_ROLES.includes(current.role)) throw notFound();
     const newActive = updates.active !== undefined ? updates.active : current.active;
     const newRole = updates.role !== undefined ? updates.role : current.role;
 

@@ -12,6 +12,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { OperationsModule } from './operations/operations.module';
 import { EventsModule } from './events/events.module';
+import { AccessModule } from './platform-access/access.module';
 
 // The development-only routes are not merely guarded, they are not registered:
 // outside development DevAuthModule is never imported, so /v1/dev/* does not
@@ -32,6 +33,7 @@ const devImports = process.env.NODE_ENV === 'development' ? [DevAuthModule] : []
     ComplianceModule,
     OperationsModule,
     EventsModule,
+    AccessModule,
     ...devImports,
   ],
 })

@@ -1,4 +1,21 @@
 import { startTestApp, type TestApp } from './support/auth-harness';
+import { base32Decode, hotp, timeStepAt } from '../src/auth/totp';
+
+const MFA_SECRET = 'JBSWY3DPEHPK3PXP';
+
+/**
+ * Completes the TOTP second factor for a fixture user and returns the rotated
+ * session cookie. Fixtures may not skip the gate: a membership-only session is
+ * pending and the guard refuses gated roles (ENG-002 T-04).
+ */
+async function elevateMfa(app: TestApp, cookie: string, secret: string): Promise<string> {
+  const res = await app.call('POST', '/v1/auth/mfa/verify', {
+    headers: { cookie, 'x-gamerbooker-csrf': '1' },
+    body: { code: hotp(base32Decode(secret), timeStepAt(Date.now())) },
+  });
+  expect(res.status).toBe(200);
+  return app.cookieOf(res);
+}
 
 interface Fixture {
   userId: string;
@@ -29,13 +46,15 @@ async function createDraftVenueWithStaff(
     [user.userId, venueId, tenantId, role],
   );
 
-  if (['OWNER', 'VENUE_MANAGER', 'PLATFORM_ADMIN'].includes(role)) {
-    await app.db.query(
-      'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-        " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
-        ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-      [user.userId],
-    );
+  if (['OWNER', 'VENUE_MANAGER'].includes(role)) {
+    const enrolled = await app.call('POST','/v1/auth/mfa/enroll',{headers:{cookie:user.cookie}});
+    expect(enrolled.status).toBe(200);
+    const secret = (enrolled.json as {secret:string}).secret;
+    const verified = await app.call('POST','/v1/auth/mfa/verify',{
+      headers:{cookie:user.cookie},body:{code:hotp(base32Decode(secret),timeStepAt(Date.now()))},
+    });
+    expect(verified.status).toBe(200);
+    user.cookie = app.cookieOf(verified);
   }
 
   return { ...user, tenantId, venueId };
@@ -47,7 +66,7 @@ describe('ENG-201 Venue Setup Wizard, Staff Invitation & Permissions', () => {
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng201');
+      app = await startTestApp('eng201', { browserClient: true });
       ownerFixture = await createDraftVenueWithStaff(
         app,
         'Esports Arena SRL',
@@ -340,10 +359,13 @@ describe('ENG-201 Venue Setup Wizard, Staff Invitation & Permissions', () => {
       );
       await app.db.query(
         'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-          " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
+          " VALUES ($1, 'totp', pgp_sym_encrypt($2, 'test-mfa-key-0123456789abcdef0123456789'), now())" +
           ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-        [managerUser.userId],
+        [managerUser.userId, MFA_SECRET],
       );
+      // Writing the factor row alone leaves the session pending; a gated role
+      // must actually complete the second factor.
+      managerUser.cookie = await elevateMfa(app, managerUser.cookie, MFA_SECRET);
 
       // Manager tries to invite another OWNER
       const res = await app.call(

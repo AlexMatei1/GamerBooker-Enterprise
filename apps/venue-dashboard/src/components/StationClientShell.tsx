@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Lock,
   Unlock,
@@ -17,8 +17,8 @@ import {
   LogOut,
   PlusCircle,
   UtensilsCrossed,
-} from 'lucide-react';
-import { realtime } from '../services/realtime';
+} from "lucide-react";
+import { realtime } from "../services/realtime";
 
 interface StationClientShellProps {
   stationId?: string;
@@ -27,22 +27,24 @@ interface StationClientShellProps {
 }
 
 export const StationClientShell: React.FC<StationClientShellProps> = ({
-  stationId = 'st-vip-01',
-  stationName = 'VIP-01 (RTX 4090)',
+  stationId = "st-vip-01",
+  stationName = "VIP-01 (RTX 4090)",
   onExitDemo,
 }) => {
   const [isLocked, setIsLocked] = useState(true);
-  const [pinInput, setPinInput] = useState('');
+  const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const [sessionUser, setSessionUser] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(7200); // 2 hours
-  const [activeTab, setActiveTab] = useState<'games' | 'apps'>('games');
-  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ro-RO'));
+  const [activeTab, setActiveTab] = useState<"games" | "apps">("games");
+  const [currentTime, setCurrentTime] = useState(
+    new Date().toLocaleTimeString("ro-RO"),
+  );
 
   // Clock ticker
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString('ro-RO'));
+      setCurrentTime(new Date().toLocaleTimeString("ro-RO"));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -66,20 +68,29 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
 
   // Real-time synchronization with mobile app and dashboard
   useEffect(() => {
-    const unsubStatus = realtime.subscribe('STATION_STATUS_CHANGED', (payload) => {
-      if (payload.stationId === stationId || payload.stationId === 'VIP-01' || payload.stationId?.includes('VIP')) {
-        if (payload.data?.status === 'OCCUPIED' && isLocked) {
-          handleUnlockSuccess(payload.data?.customerName || 'Alex M. (App Fast Pass)');
-        } else if (payload.data?.status === 'AVAILABLE' && !isLocked) {
-          setIsLocked(true);
+    const unsubStatus = realtime.subscribe(
+      "STATION_STATUS_CHANGED",
+      (payload) => {
+        if (
+          payload.stationId === stationId ||
+          payload.stationId === "VIP-01" ||
+          payload.stationId?.includes("VIP")
+        ) {
+          if (payload.data?.status === "OCCUPIED" && isLocked) {
+            handleUnlockSuccess(
+              payload.data?.customerName || "Alex M. (App Fast Pass)",
+            );
+          } else if (payload.data?.status === "AVAILABLE" && !isLocked) {
+            setIsLocked(true);
+          }
         }
-      }
-    });
+      },
+    );
 
-    const unsubExtend = realtime.subscribe('SESSION_EXTENDED', (payload) => {
-      if (payload.stationId === 'VIP-01' || payload.stationId === stationId) {
+    const unsubExtend = realtime.subscribe("SESSION_EXTENDED", (payload) => {
+      if (payload.stationId === "VIP-01" || payload.stationId === stationId) {
         setSecondsRemaining((prev) => prev + 3600);
-        realtime.playSound('success');
+        realtime.playSound("success");
       }
     });
 
@@ -93,12 +104,16 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
     setIsLocked(false);
     setSessionUser(userName);
     setPinError(null);
-    setPinInput('');
-    realtime.playSound('success');
-    realtime.broadcast({
-      type: 'PC_LOCK_EVENT',
+    setPinInput("");
+    realtime.playSound("success");
+    realtime.broadcastLocal({
+      type: "PC_LOCK_EVENT",
       stationId,
-      data: { status: 'UNLOCKED', user: userName, timestamp: new Date().toISOString() },
+      data: {
+        status: "UNLOCKED",
+        user: userName,
+        timestamp: new Date().toISOString(),
+      },
     });
   };
 
@@ -107,28 +122,30 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
     if (pinInput.trim().length >= 4) {
       handleUnlockSuccess(`Player #${pinInput.trim().toUpperCase()}`);
     } else {
-      setPinError('Please enter a valid 4-6 digit pass PIN or Crockford token.');
-      realtime.playSound('alert');
+      setPinError(
+        "Please enter a valid 4-6 digit pass PIN or Crockford token.",
+      );
+      realtime.playSound("alert");
     }
   };
 
   const handleLockStation = () => {
     setIsLocked(true);
     setSessionUser(null);
-    realtime.playSound('alert');
-    realtime.broadcast({
-      type: 'PC_LOCK_EVENT',
+    realtime.playSound("alert");
+    realtime.broadcastLocal({
+      type: "PC_LOCK_EVENT",
       stationId,
-      data: { status: 'LOCKED', timestamp: new Date().toISOString() },
+      data: { status: "LOCKED", timestamp: new Date().toISOString() },
     });
   };
 
   const handleExtendOneHour = () => {
     setSecondsRemaining((prev) => prev + 3600);
-    realtime.playSound('success');
-    realtime.broadcast({
-      type: 'SESSION_EXTENDED',
-      stationId: 'VIP-01',
+    realtime.playSound("success");
+    realtime.broadcastLocal({
+      type: "SESSION_EXTENDED",
+      stationId: "VIP-01",
       data: { remainingSeconds: secondsRemaining + 3600 },
     });
   };
@@ -137,16 +154,41 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
   const gamesList = [
-    { name: 'Counter-Strike 2', category: 'Tactical Shooter', icon: '🎯', status: 'Ready to Play' },
-    { name: 'Valorant', category: 'Competitive FPS', icon: '⚡', status: 'Updated' },
-    { name: 'Cyberpunk 2077', category: 'Ray Tracing Ultra', icon: '🌆', status: 'Ready' },
-    { name: 'Dota 2', category: 'MOBA', icon: '⚔️', status: 'Ready' },
-    { name: 'EA Sports FC 25', category: 'Sports Simulation', icon: '⚽', status: 'Ready' },
-    { name: 'League of Legends', category: 'MOBA', icon: '🛡️', status: 'Ready' },
+    {
+      name: "Counter-Strike 2",
+      category: "Tactical Shooter",
+      icon: "🎯",
+      status: "Ready to Play",
+    },
+    {
+      name: "Valorant",
+      category: "Competitive FPS",
+      icon: "⚡",
+      status: "Updated",
+    },
+    {
+      name: "Cyberpunk 2077",
+      category: "Ray Tracing Ultra",
+      icon: "🌆",
+      status: "Ready",
+    },
+    { name: "Dota 2", category: "MOBA", icon: "⚔️", status: "Ready" },
+    {
+      name: "EA Sports FC 25",
+      category: "Sports Simulation",
+      icon: "⚽",
+      status: "Ready",
+    },
+    {
+      name: "League of Legends",
+      category: "MOBA",
+      icon: "🛡️",
+      status: "Ready",
+    },
   ];
 
   return (
@@ -155,7 +197,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
       <div className="bg-zinc-950 border-b border-white/[0.08] px-4 py-2 flex items-center justify-between text-xs text-zinc-400">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-semibold text-white">GamerBooker Station Agent v1.0 (Smart Lock)</span>
+          <span className="font-semibold text-white">
+            GamerBooker Station Agent v1.0 (Smart Lock)
+          </span>
           <span className="text-zinc-600">•</span>
           <span className="font-mono text-zinc-400">Host: {stationName}</span>
         </div>
@@ -190,7 +234,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
               <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-400">
                 Nexus Gaming Arena &bull; Rig #01
               </span>
-              <h2 className="text-2xl font-black text-white tracking-tight mt-0.5">{stationName}</h2>
+              <h2 className="text-2xl font-black text-white tracking-tight mt-0.5">
+                {stationName}
+              </h2>
               <div className="flex items-center gap-2 mt-2">
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   RTX 4090 24GB
@@ -207,13 +253,19 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
                 <QrCode className="w-28 h-28 text-black" />
               </div>
               <div className="text-xs text-zinc-300 font-medium">
-                Scan with your <span className="text-white font-bold">GamerBooker Mobile App</span> to unlock
+                Scan with your{" "}
+                <span className="text-white font-bold">
+                  GamerBooker Mobile App
+                </span>{" "}
+                to unlock
               </div>
             </div>
 
             {/* PIN or Crockford Code Unlock Form */}
             <form onSubmit={handleManualPinUnlock} className="space-y-2.5">
-              <div className="text-[11px] text-zinc-400">Or enter 6-digit Boarding Pass PIN:</div>
+              <div className="text-[11px] text-zinc-400">
+                Or enter 6-digit Boarding Pass PIN:
+              </div>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -231,14 +283,18 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
                   <span>Unlock</span>
                 </button>
               </div>
-              {pinError && <div className="text-[11px] text-rose-400 font-semibold">{pinError}</div>}
+              {pinError && (
+                <div className="text-[11px] text-rose-400 font-semibold">
+                  {pinError}
+                </div>
+              )}
             </form>
 
             {/* Quick Demo Simulator Button */}
             <div className="pt-2 border-t border-white/[0.06]">
               <button
                 type="button"
-                onClick={() => handleUnlockSuccess('Alex M. (Fast Pass)')}
+                onClick={() => handleUnlockSuccess("Alex M. (Fast Pass)")}
                 className="w-full py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
               >
                 <Sparkles className="w-3.5 h-3.5" />
@@ -260,7 +316,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
               </div>
               <div>
                 <div className="text-xs text-zinc-400">Active Player</div>
-                <div className="text-sm font-bold text-white">{sessionUser}</div>
+                <div className="text-sm font-bold text-white">
+                  {sessionUser}
+                </div>
               </div>
             </div>
 
@@ -271,7 +329,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
                 <span className="font-mono text-base font-extrabold text-emerald-400 tabular-nums">
                   {formatCountdown(secondsRemaining)}
                 </span>
-                <span className="text-[10px] text-zinc-500 uppercase font-mono">Left</span>
+                <span className="text-[10px] text-zinc-500 uppercase font-mono">
+                  Left
+                </span>
               </div>
 
               {/* Action Buttons: Extend, Order Snacks, Lock */}
@@ -303,7 +363,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
                 <Sparkles className="w-4 h-4 text-emerald-400" />
                 <span>Installed Games &amp; Esports Suite</span>
               </h3>
-              <span className="text-xs text-zinc-500 font-mono">SSD Storage: 3.4 TB Free</span>
+              <span className="text-xs text-zinc-500 font-mono">
+                SSD Storage: 3.4 TB Free
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -320,7 +382,9 @@ export const StationClientShell: React.FC<StationClientShellProps> = ({
                       <div className="font-bold text-sm text-white group-hover:text-emerald-300 transition-colors">
                         {game.name}
                       </div>
-                      <div className="text-xs text-zinc-400">{game.category}</div>
+                      <div className="text-xs text-zinc-400">
+                        {game.category}
+                      </div>
                     </div>
                   </div>
                   <button className="px-3 py-1.5 rounded-lg bg-zinc-800 group-hover:bg-emerald-500 group-hover:text-black text-zinc-200 text-xs font-bold transition-all flex items-center gap-1">

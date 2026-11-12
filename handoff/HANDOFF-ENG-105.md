@@ -1,6 +1,6 @@
 # HANDOFF - ENG-105 Booking confirmation guard and state machine with audit/outbox
 
-Status: proposed, ready for implementation.
+Historical status: proposed, ready for implementation. See the [2026-11-04 status inventory](HANDOFF-INDEX-2026-11-04.md) for the later assessment.
 Author: thinker (contract), recorded by the primary agent (scribe).
 Task source: docs/11-delivery/04-engineering-handoff-backlog.md:18 (ENG-105), critical path line 54.
 Roadmap: Milestone M1 Resource & availability core (docs/11-delivery/01-implementation-roadmap.md:10-14).

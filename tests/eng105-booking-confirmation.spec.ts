@@ -2,6 +2,7 @@
  * Acceptance test suite for ENG-105: Booking confirmation guard and state machine with audit/outbox.
  */
 import { startTestApp, type TestApp } from './support/auth-harness';
+import { base32Decode, hotp, timeStepAt } from '../src/auth/totp';
 
 interface Fixture {
   userId: string;
@@ -33,13 +34,15 @@ async function createTenantAndVenue(
     [user.userId, venueId, tenantId, role],
   );
 
-  if (['OWNER', 'VENUE_MANAGER', 'PLATFORM_ADMIN'].includes(role)) {
-    await app.db.query(
-      'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-        " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
-        ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-      [user.userId],
-    );
+  if (['OWNER', 'VENUE_MANAGER'].includes(role)) {
+    const enrolled = await app.call('POST','/v1/auth/mfa/enroll',{headers:{cookie:user.cookie}});
+    expect(enrolled.status).toBe(200);
+    const secret = (enrolled.json as {secret:string}).secret;
+    const verified = await app.call('POST','/v1/auth/mfa/verify',{
+      headers:{cookie:user.cookie},body:{code:hotp(base32Decode(secret),timeStepAt(Date.now()))},
+    });
+    expect(verified.status).toBe(200);
+    user.cookie = app.cookieOf(verified);
   }
 
   return { ...user, tenantId, venueId };
@@ -59,7 +62,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng105');
+      app = await startTestApp('eng105', { browserClient: true });
       ownerFixture = await createTenantAndVenue(app, 'Apex Gaming SRL', 'Apex Arena Bucharest', 'OWNER');
       foreignFixture = await createTenantAndVenue(app, 'Quantum Play SRL', 'Quantum Club Cluj', 'OWNER');
 
@@ -128,7 +131,17 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       body: { quote_id: quote.quote_id },
     });
     expect(holdRes.status).toBe(201);
-    return holdRes.json as { id: string; status: string; starts_at: string; ends_at: string };
+    const hold = holdRes.json as { id: string; customer_id: string; status: string; starts_at: string; ends_at: string };
+    const payment = await app.db.query<{ id: string }>(
+      `INSERT INTO payment_intents
+         (tenant_id, venue_id, provider, provider_ref, idempotency_key, amount_minor, currency, status, metadata)
+       SELECT h.tenant_id, h.venue_id, 'stripe', 'pi_test_' || replace(gen_random_uuid()::text, '-', ''),
+              'test-solo-' || h.id, q.due_now_minor, q.currency, 'CAPTURED',
+              jsonb_build_object('type', 'SOLO_BOOKING_CHECKOUT', 'hold_id', h.id, 'customer_id', h.customer_id)
+         FROM holds h JOIN price_quotes q ON q.id = h.quote_id WHERE h.id = $1 RETURNING id`,
+      [hold.id],
+    );
+    return { ...hold, payment_intent_id: payment.rows[0].id };
   }
 
   describe('Hold Confirmation Guard & Atomic Lock Conversion', () => {
@@ -141,7 +154,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       // Confirm booking
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
 
       expect(confirmRes.status).toBe(201);
@@ -205,7 +218,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
 
       const res = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
 
       expect(res.status).toBe(409);
@@ -232,12 +245,89 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       // Attempt to confirm released hold
       const res = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
 
       expect(res.status).toBe(409);
       const err = app.errorOf(res);
       expect(err.code).toBe('HOLD_NOT_ACTIVE');
+    });
+
+    it('requires a captured payment intent and leaves the hold active when it is missing', async () => {
+      const startsAt = '2026-11-15T10:00:00.000Z';
+      const endsAt = '2026-11-15T12:00:00.000Z';
+      const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
+
+      const res = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerA.cookie },
+        body: { hold_id: hold.id },
+      });
+
+      expect(res.status).toBe(409);
+      expect(app.errorOf(res).code).toBe('PAYMENT_REQUIRED');
+
+      const [holdDb, bookingDb] = await Promise.all([
+        app.db.query<{ status: string }>('SELECT status FROM holds WHERE id = $1', [hold.id]),
+        app.db.query('SELECT id FROM bookings WHERE hold_id = $1', [hold.id]),
+      ]);
+      expect(holdDb.rows[0].status).toBe('ACTIVE');
+      expect(bookingDb.rows).toHaveLength(0);
+    });
+
+    it('rejects a payment intent that has not been captured and leaves the hold active', async () => {
+      const startsAt = '2026-11-15T14:00:00.000Z';
+      const endsAt = '2026-11-15T16:00:00.000Z';
+      const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
+      await app.db.query("UPDATE payment_intents SET status = 'PENDING' WHERE id = $1", [
+        hold.payment_intent_id,
+      ]);
+
+      const res = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerA.cookie },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+
+      expect(res.status).toBe(409);
+      expect(app.errorOf(res).code).toBe('PAYMENT_NOT_CAPTURED_OR_MISMATCHED');
+
+      const [holdDb, bookingDb, paymentDb] = await Promise.all([
+        app.db.query<{ status: string }>('SELECT status FROM holds WHERE id = $1', [hold.id]),
+        app.db.query('SELECT id FROM bookings WHERE hold_id = $1', [hold.id]),
+        app.db.query<{ booking_id: string | null }>('SELECT booking_id FROM payment_intents WHERE id = $1', [
+          hold.payment_intent_id,
+        ]),
+      ]);
+      expect(holdDb.rows[0].status).toBe('ACTIVE');
+      expect(bookingDb.rows).toHaveLength(0);
+      expect(paymentDb.rows[0].booking_id).toBeNull();
+    });
+
+    it('rejects a captured payment intent with the wrong amount and leaves the hold active', async () => {
+      const startsAt = '2026-11-15T18:00:00.000Z';
+      const endsAt = '2026-11-15T20:00:00.000Z';
+      const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
+      await app.db.query('UPDATE payment_intents SET amount_minor = amount_minor + 1 WHERE id = $1', [
+        hold.payment_intent_id,
+      ]);
+
+      const res = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerA.cookie },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+
+      expect(res.status).toBe(409);
+      expect(app.errorOf(res).code).toBe('PAYMENT_NOT_CAPTURED_OR_MISMATCHED');
+
+      const [holdDb, bookingDb, paymentDb] = await Promise.all([
+        app.db.query<{ status: string }>('SELECT status FROM holds WHERE id = $1', [hold.id]),
+        app.db.query('SELECT id FROM bookings WHERE hold_id = $1', [hold.id]),
+        app.db.query<{ booking_id: string | null }>('SELECT booking_id FROM payment_intents WHERE id = $1', [
+          hold.payment_intent_id,
+        ]),
+      ]);
+      expect(holdDb.rows[0].status).toBe('ACTIVE');
+      expect(bookingDb.rows).toHaveLength(0);
+      expect(paymentDb.rows[0].booking_id).toBeNull();
     });
 
     it('idempotent confirmation returns existing booking without duplicates', async () => {
@@ -250,15 +340,23 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       // First confirmation
       const res1 = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie, 'idempotency-key': idempotencyKey },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       expect(res1.status).toBe(201);
       const booking1 = res1.json as { id: string };
 
+      // A key is scoped to the customer that originally created the booking.
+      const foreignReplay = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerB.cookie, 'idempotency-key': idempotencyKey },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(foreignReplay.status).toBe(403);
+      expect(app.errorOf(foreignReplay).code).toBe('FORBIDDEN');
+
       // Replay with identical idempotency key
       const res2 = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie, 'idempotency-key': idempotencyKey },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       expect(res2.status).toBe(201);
       const booking2 = res2.json as { id: string };
@@ -268,6 +366,31 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       // Exactly 1 booking in database
       const dbBookings = await app.db.query('SELECT * FROM bookings WHERE hold_id = $1', [hold.id]);
       expect(dbBookings.rows).toHaveLength(1);
+    });
+
+    it('denies a foreign customer from confirming an active hold and preserves it for its owner', async () => {
+      const startsAt = '2026-11-11T18:00:00.000Z';
+      const endsAt = '2026-11-11T20:00:00.000Z';
+      const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
+
+      const foreignConfirm = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerB.cookie },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(foreignConfirm.status).toBe(403);
+      expect(app.errorOf(foreignConfirm).code).toBe('FORBIDDEN');
+
+      const holdAfterForeignAttempt = await app.db.query<{ status: string }>(
+        'SELECT status FROM holds WHERE id = $1',
+        [hold.id],
+      );
+      expect(holdAfterForeignAttempt.rows[0].status).toBe('ACTIVE');
+
+      const ownerConfirm = await app.call('POST', '/v1/bookings/confirm', {
+        headers: { cookie: customerA.cookie },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
+      });
+      expect(ownerConfirm.status).toBe(201);
     });
   });
 
@@ -279,7 +402,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       expect(confirmRes.status).toBe(201);
       const booking = confirmRes.json as { id: string; version: number };
@@ -335,7 +458,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc2Id], startsAt, endsAt);
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const booking = confirmRes.json as { id: string };
 
@@ -361,7 +484,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       const hold = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: hold.id },
+        body: { hold_id: hold.id, payment_intent_id: hold.payment_intent_id },
       });
       const booking = confirmRes.json as { id: string };
 
@@ -390,7 +513,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       const holdA = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
       const confirmResA = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: holdA.id },
+        body: { hold_id: holdA.id, payment_intent_id: holdA.payment_intent_id },
       });
       expect(confirmResA.status).toBe(201);
       const bookingA = confirmResA.json as { id: string; version: number };
@@ -432,7 +555,7 @@ describe('ENG-105 Booking Confirmation Guard & State Machine with Audit/Outbox',
       const holdA = await createHoldHelper(customerA.cookie, ownerFixture.venueId, [pc1Id], startsAt, endsAt);
       const confirmA = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customerA.cookie },
-        body: { hold_id: holdA.id },
+        body: { hold_id: holdA.id, payment_intent_id: holdA.payment_intent_id },
       });
       const bookingA = confirmA.json as { id: string; public_code: string };
 

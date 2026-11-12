@@ -415,8 +415,8 @@ export class OperationsService {
           [resourceId, tenantId, actorId, startsAt.toISOString(), endsAt.toISOString()],
         );
         claimId = claimRes.rows[0].id;
-      } catch (err: any) {
-        if (err.code === '23P01') {
+      } catch (err: unknown) {
+        if (typeof err === 'object' && err !== null && (err as { code?: string }).code === '23P01') {
           // Exclusion collision
           throw conflict(
             'RESOURCE_MAINTENANCE_CONFLICT',

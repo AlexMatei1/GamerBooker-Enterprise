@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -78,7 +80,7 @@ describe('ENG-305 Refund Lifecycle, Daily Reconciliation Report & Alerting', () 
   let bookingOffsetHours = 50;
 
   beforeAll(async () => {
-    app = await startTestApp('eng305');
+    app = await startTestApp('eng305', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Nexus Arena SRL', 'Nexus Arena Cluj');
     otherVenueFixtures = await createVenueWithRoles(app, 'Other Venue SRL', 'Other Venue Bucharest');
     customerUser = await app.verifiedUser();
@@ -137,9 +139,15 @@ describe('ENG-305 Refund Lifecycle, Daily Reconciliation Report & Alerting', () 
     });
     const hold = holdRes.json as any;
 
+    // The confirm guard requires server-side proof of the upfront charge; the
+    // fixture settles the hold the way the PSP webhook would.
+    const upfrontIntentId = await app.settleHoldPayment(hold.id);
     const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: customerUser.cookie },
-      body: { hold_id: hold.id },
+      body: {
+        hold_id: hold.id,
+        ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+      },
     });
     const booking = (confirmRes.json as any).booking || (confirmRes.json as any);
     return booking.id;

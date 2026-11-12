@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -76,7 +78,7 @@ describe('ENG-503 Security Hardening, BOLA/PenTest, and Observability Dashboards
   let orderAId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng503');
+    app = await startTestApp('eng503', { browserClient: true });
     venueA = await createVenueWithRoles(app, 'Fortress Gaming SRL', 'Fortress Arena Bucharest');
     venueB = await createVenueWithRoles(app, 'Rival Club SRL', 'Rival Gaming Cluj');
 
@@ -130,9 +132,15 @@ describe('ENG-503 Security Hardening, BOLA/PenTest, and Observability Dashboards
     });
     const hold = holdRes.json as any;
 
+    // The confirm guard requires server-side proof of the upfront charge; the
+    // fixture settles the hold the way the PSP webhook would.
+    const upfrontIntentId = await app.settleHoldPayment(hold.id);
     const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: customerA.cookie },
-      body: { hold_id: hold.id },
+      body: {
+        hold_id: hold.id,
+        ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+      },
     });
     const confirmed = confirmRes.json as any;
     bookingAId = confirmed.booking?.id || confirmed.id;
@@ -268,8 +276,12 @@ describe('ENG-503 Security Hardening, BOLA/PenTest, and Observability Dashboards
   });
 
   describe('Security Violation Logging & Observability Metrics', () => {
-    it('records and queries security metrics with violation categorization', async () => {
-      // 1. Log security violation
+    // HANDOFF-CAFE-ACCESS-2026-11-05.md line 29 deliberately closes the legacy
+    // observability routes (security metrics, security-violation capture and
+    // system health) as a compatibility change, because their contracts were not
+    // tenant-safe. Basic /healthz and /readyz stay available. These assertions pin
+    // the closure so an accidental re-opening is caught by CI rather than in prod.
+    it('fails closed on the legacy security-violation capture route', async () => {
       const logRes = await app.call('POST', '/v1/observability/security-violations', {
         headers: { cookie: venueA.owner.cookie },
         body: {
@@ -280,32 +292,29 @@ describe('ENG-503 Security Hardening, BOLA/PenTest, and Observability Dashboards
           metadata: { attempted_by: customerB.userId },
         },
       });
-      expect(logRes.status).toBe(201);
-      expect((logRes.json as any).id).toBeTruthy();
+      expect(logRes.status).toBe(404);
+      expect(app.errorOf(logRes).code).toBe('RESOURCE_NOT_FOUND');
+    });
 
-      // 2. Query security metrics dashboard
+    it('fails closed on the legacy security-metrics dashboard route', async () => {
       const metricsRes = await app.call('GET', '/v1/observability/security-metrics', {
         headers: { cookie: venueA.owner.cookie },
       });
-      expect(metricsRes.status).toBe(200);
-      const metrics = metricsRes.json as any;
-      expect(metrics.total_violations).toBeGreaterThanOrEqual(1);
-      expect(metrics.violations_by_type.BOLA_UNAUTHORIZED_OBJECT_ACCESS).toBeGreaterThanOrEqual(1);
-      expect(metrics.recent_violations.length).toBeGreaterThanOrEqual(1);
+      expect(metricsRes.status).toBe(404);
+      expect(app.errorOf(metricsRes).code).toBe('RESOURCE_NOT_FOUND');
     });
 
-    it('returns system health overview with database pool metrics and outbox queue status', async () => {
-      const healthRes = await app.call('GET', '/v1/observability/system-health');
-      expect(healthRes.status).toBe(200);
-      const health = healthRes.json as any;
+    it('fails closed on the legacy system-health overview route', async () => {
+      // Unauthenticated callers are stopped by SessionGuard first.
+      const anonRes = await app.call('GET', '/v1/observability/system-health');
+      expect(anonRes.status).toBe(401);
 
-      expect(['HEALTHY', 'DEGRADED']).toContain(health.status);
-      expect(health.database.connected).toBe(true);
-      expect(health.database.latency_ms).toBeGreaterThanOrEqual(0);
-      expect(health.database.active_connections).toBeGreaterThanOrEqual(0);
-      expect(health.outbox_queue.pending_events).toBeGreaterThanOrEqual(0);
-      expect(health.outbox_queue.healthy).toBe(true);
-      expect(health.uptime_seconds).toBeGreaterThanOrEqual(0);
+      // An authenticated caller then hits the explicit closure.
+      const healthRes = await app.call('GET', '/v1/observability/system-health', {
+        headers: { cookie: venueA.owner.cookie },
+      });
+      expect(healthRes.status).toBe(404);
+      expect(app.errorOf(healthRes).code).toBe('RESOURCE_NOT_FOUND');
     });
   });
 });

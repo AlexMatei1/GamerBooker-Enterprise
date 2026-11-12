@@ -4,7 +4,6 @@ import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
 import { QuotesService } from './quotes.service';
 import { PoliciesService } from './policies.service';
-import { validateBookingInterval } from './policy.validator';
 import { validateTimezoneSlot } from './timezone.validator';
 import type {
   CreatePackageInput,
@@ -14,6 +13,43 @@ import type {
   PackageQuoteInput,
 } from './packages.types';
 import type { PriceQuote, QuoteItem } from './quotes.types';
+
+interface PackageRow {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  name: string;
+  description: string | null;
+  resource_type: string;
+  duration_minutes: number | string;
+  fixed_price_minor: number | string;
+  currency: string;
+  active: boolean;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
+interface PackageItemJoinRow {
+  id: string;
+  product_id: string;
+  quantity: number | string;
+  allocated_price_minor: number | string | null;
+  product_title: string;
+  price_minor: number | string | null;
+  tax_category: string | null;
+  age_verification_required: boolean | null;
+  stock_on_hand: number | string | null;
+  stock_reserved: number | string | null;
+  inventory_tracking: boolean | null;
+}
+
+interface PackageResourceRow {
+  id: string;
+  name: string;
+  type: string;
+  bookable: boolean;
+  status: string;
+}
 
 @Injectable()
 export class PackagesService {
@@ -107,7 +143,7 @@ export class PackagesService {
         }
       }
 
-      const pkgRes = await client.query<any>(
+      const pkgRes = await client.query<PackageRow>(
         `INSERT INTO packages (
            tenant_id, venue_id, name, description, resource_type,
            duration_minutes, fixed_price_minor, currency, active
@@ -186,13 +222,13 @@ export class PackagesService {
       ? 'SELECT * FROM packages WHERE id = $1 AND venue_id = $2 AND active = true'
       : 'SELECT * FROM packages WHERE id = $1 AND venue_id = $2';
 
-    const res = await pool.query<any>(query, [packageId, venueId]);
+    const res = await pool.query<PackageRow>(query, [packageId, venueId]);
     if (res.rows.length === 0) {
       throw new AuthHttpError(HttpStatus.NOT_FOUND, 'PACKAGE_NOT_FOUND', 'Package not found.');
     }
     const pkg = res.rows[0];
 
-    const itemsRes = await pool.query<any>(
+    const itemsRes = await pool.query<PackageItemJoinRow>(
       `SELECT pi.*, p.title as product_title, p.price_minor, p.tax_category,
               p.age_verification_required, p.stock_on_hand, p.stock_reserved, p.inventory_tracking
          FROM package_items pi
@@ -265,7 +301,7 @@ export class PackagesService {
     try {
       await client.query('BEGIN');
 
-      const pkgRes = await client.query<any>(
+      const pkgRes = await client.query<PackageRow>(
         'SELECT * FROM packages WHERE id = $1 AND venue_id = $2 FOR UPDATE',
         [packageId, venueId],
       );
@@ -335,8 +371,8 @@ export class PackagesService {
   async deletePackage(
     venueId: string,
     packageId: string,
-    staffId: string,
-    staffRole: string,
+    _staffId: string,
+    _staffRole: string,
   ): Promise<{ success: boolean }> {
     const pool = getPool();
 
@@ -396,7 +432,7 @@ export class PackagesService {
     validateTimezoneSlot(end.toISOString(), venueTz);
 
     // 1. Validate resource
-    const resRes = await pool.query<any>(
+    const resRes = await pool.query<PackageResourceRow>(
       'SELECT * FROM resources WHERE id = $1 AND venue_id = $2',
       [input.resource_id, venueId],
     );
@@ -422,7 +458,7 @@ export class PackagesService {
     }
 
     // 2. Validate calendar availability (claims + maintenance)
-    const claimRes = await pool.query<any>(
+    const claimRes = await pool.query<{ id: string }>(
       `SELECT id FROM resource_claims
         WHERE resource_id = $1
           AND state IN ('ACTIVE_HOLD', 'CONFIRMED')

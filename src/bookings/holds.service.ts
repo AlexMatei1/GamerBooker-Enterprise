@@ -5,6 +5,15 @@ import { QuotesService } from './quotes.service';
 import type { CreateHoldInput, HoldResult, HoldRow } from './holds.types';
 import type { QuoteItem } from './quotes.types';
 
+/** Subset of a locked `products` row used while reserving a package. */
+interface PackageProductRow {
+  id: string;
+  title: string;
+  inventory_tracking: boolean;
+  stock_on_hand: string | number;
+  stock_reserved: string | number;
+}
+
 @Injectable()
 export class HoldsService {
   constructor(private readonly quotesService: QuotesService) {}
@@ -218,11 +227,13 @@ export class HoldsService {
         );
         const prodIds = pkgItemsRes.rows.map((p) => p.product_id);
         if (prodIds.length > 0) {
-          const prodsRes = await client.query<any>(
+          const prodsRes = await client.query<PackageProductRow>(
             'SELECT * FROM products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
             [prodIds],
           );
-          const prodsMap = new Map<string, any>(prodsRes.rows.map((p) => [p.id, p]));
+          const prodsMap = new Map<string, PackageProductRow>(
+            prodsRes.rows.map((p) => [p.id, p]),
+          );
 
           for (const item of pkgItemsRes.rows) {
             const prod = prodsMap.get(item.product_id);
@@ -286,9 +297,9 @@ export class HoldsService {
             ],
           );
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // PostgreSQL error code 23P01 is exclusion_violation
-        if (err && err.code === '23P01') {
+        if (typeof err === 'object' && err !== null && (err as { code?: string }).code === '23P01') {
           throw new AuthHttpError(
             HttpStatus.CONFLICT,
             'RESOURCE_UNAVAILABLE',

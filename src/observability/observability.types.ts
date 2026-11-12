@@ -15,7 +15,7 @@ export interface LogSecurityViolationInput {
   targetId?: string;
   endpoint?: string;
   ipAddress?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   requestId?: string;
 }
 
@@ -29,7 +29,7 @@ export interface SecurityMetricsSummary {
     target_type?: string | null;
     target_id?: string | null;
     occurred_at: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
   }>;
   high_risk_flag: boolean;
 }

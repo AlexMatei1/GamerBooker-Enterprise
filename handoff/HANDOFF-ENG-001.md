@@ -1,6 +1,6 @@
 # HANDOFF-ENG-001 - E0 Foundation
 
-Status: proposed, awaiting human acceptance. Not implemented.
+Historical status: proposed, awaiting human acceptance. not implemented. See the [2026-11-04 status inventory](HANDOFF-INDEX-2026-11-04.md) for the later assessment.
 Author: thinker. Recorded by: primary agent (scribe owns this file from now on).
 Sources verified by the primary agent: BR-011, BR-024, OI-017, DEC-014, ADR-002 all exist as cited.
 

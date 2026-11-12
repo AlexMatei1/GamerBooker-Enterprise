@@ -36,6 +36,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -49,6 +50,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -80,7 +82,7 @@ describe('ENG-301 Group Booking Split Allocation & Invitation Tokens', () => {
   let validQuoteId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng301');
+    app = await startTestApp('eng301', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'TeamPulse Esports SRL', 'TeamPulse Cluj');
 
     organizer = await app.verifiedUser();

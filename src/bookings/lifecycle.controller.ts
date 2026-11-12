@@ -122,6 +122,7 @@ export class LifecycleController {
   @RequireVenueRole('OWNER', 'VENUE_MANAGER', 'RECEPTION')
   async staffExtendSession(
     @Req() req: AuthedRequest,
+    @Param('venue_id') venueId: string,
     @Param('id') bookingId: string,
     @Body() input: ExtendSessionInput,
     @Headers('x-request-id') requestId?: string,
@@ -135,6 +136,7 @@ export class LifecycleController {
       staffId,
       input,
       requestId,
+      venueId,
     );
   }
 }

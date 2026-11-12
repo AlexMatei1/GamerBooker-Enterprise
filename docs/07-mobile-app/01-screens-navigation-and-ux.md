@@ -1,5 +1,8 @@
 # Aplicația mobilă — ecrane, navigație, fluxuri UX
 
+## Preview Flutter local
+În `apps/flutter-mobile` există un preview Android cu date demonstrative, navigație între săli, alegerea unui loc și a duratei, rezumat și permis simulate, meniu cu coș simulat și ecran de cont. Nu creează rezervări reale, nu procesează plăți și nu trimite comenzi. Autentificarea, disponibilitatea, cotațiile server, plata PSP și check-in-ul real rămân de integrat. Instrucțiunile de build și instalare sunt în `apps/flutter-mobile/README.md`.
+
 ## Distribuție [CONFIRMED]
 Clientul rezervă exclusiv din aplicația instalată prin App Store / Google Play. Landing web din QR poate afișa informații și deep-link către store, dar **nu** trebuie să permită checkout web paralel.
 

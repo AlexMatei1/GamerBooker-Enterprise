@@ -1,6 +1,6 @@
 # HANDOFF - ENG-003 Multi-tenant venue schema, memberships, admin onboarding, row ownership tests
 
-Status: proposed, ready for implementation.
+Historical status: proposed, ready for implementation. See the [2026-11-04 status inventory](HANDOFF-INDEX-2026-11-04.md) for the later assessment.
 Author: thinker (contract), recorded by the primary agent (scribe).
 Task source: docs/11-delivery/04-engineering-handoff-backlog.md:9 (ENG-003),
 critical path line 54. M0 requires multi-tenant isolation and row ownership tests

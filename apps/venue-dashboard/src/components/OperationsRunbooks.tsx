@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   AlertOctagon,
   CheckCircle2,
@@ -9,28 +9,70 @@ import {
   RotateCcw,
   ShieldCheck,
   Zap,
-} from 'lucide-react';
-import type { VenueRole } from '../types/dashboard';
+} from "lucide-react";
+import type { VenueRole } from "../types/dashboard";
 
 interface OperationsRunbooksProps {
   venueId: string;
   role: VenueRole;
 }
 
-export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId, role }) => {
-  const [r1ResourceId, setR1ResourceId] = useState('CYBER-PC-01');
+export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({
+  venueId,
+  role,
+}) => {
+  const [r1ResourceId, setR1ResourceId] = useState("CYBER-PC-01");
   const [r1Result, setR1Result] = useState<any>(null);
-  const [r2IntentRef, setR2IntentRef] = useState('');
+  const [r2IntentRef, setR2IntentRef] = useState("");
   const [r2Result, setR2Result] = useState<any>(null);
 
   const gates = [
-    { id: 'gate-1', name: 'Gate 1: Venue Publication Status', status: 'PASSED', details: 'Venue is officially PUBLISHED.' },
-    { id: 'gate-2', name: 'Gate 2: Active Layout Revision Published', status: 'PASSED', details: 'Active layout revision #3 deployed and previewable.' },
-    { id: 'gate-3', name: 'Gate 3: Active Bookable Resources', status: 'PASSED', details: '18 active physical workstations available with zero unresolvable tariffs.' },
-    { id: 'gate-4', name: 'Gate 4: 7-Day Operating Schedules', status: 'PASSED', details: 'Complete operating schedules (Mon-Sun 09:00 - 23:00) defined.' },
-    { id: 'gate-5', name: 'Gate 5: Default Commercial Policy', status: 'PASSED', details: 'Default policy configured (40% deposit, 3h cancellation, ONLINE_OR_RECEPTION).' },
-    { id: 'gate-6', name: 'Gate 6: Authoritative Pricing Rules', status: 'PASSED', details: 'Base rate 30.00 RON/h active with zero overlapping price conflicts.' },
-    { id: 'gate-7', name: 'Gate 7: Partner Staff Training Certifications', status: 'PASSED', details: '100% venue staff certified across Owner, Manager, Reception, and Bar modules.' },
+    {
+      id: "gate-1",
+      name: "Exemplu 1: Publicarea locației",
+      status: "PASSED",
+      details:
+        "Valoare ilustrativă de publicare; starea reală nu este verificată.",
+    },
+    {
+      id: "gate-2",
+      name: "Exemplu 2: Revizia planului",
+      status: "PASSED",
+      details: "Revizie ilustrativă #3; nu confirmă un plan publicat.",
+    },
+    {
+      id: "gate-3",
+      name: "Exemplu 3: Resurse rezervabile",
+      status: "PASSED",
+      details:
+        "Scenariu ilustrativ cu 18 locuri; disponibilitatea și tarifele reale nu sunt verificate.",
+    },
+    {
+      id: "gate-4",
+      name: "Exemplu 4: Programul locației",
+      status: "PASSED",
+      details: "Program ilustrativ: luni–duminică 09:00–23:00.",
+    },
+    {
+      id: "gate-5",
+      name: "Exemplu 5: Politica locației",
+      status: "PASSED",
+      details:
+        "Politică ilustrativă: avans 40%, anulare cu 3h înainte; nu este o regulă confirmată.",
+    },
+    {
+      id: "gate-6",
+      name: "Exemplu 6: Tarife",
+      status: "PASSED",
+      details:
+        "Tarif ilustrativ 30 RON/h; nu a fost verificat un catalog real.",
+    },
+    {
+      id: "gate-7",
+      name: "Exemplu 7: Pregătirea personalului",
+      status: "EXAMPLE",
+      details: "Listă ilustrativă de instruire; nu certifică personalul.",
+    },
   ];
 
   function runR1Audit() {
@@ -40,21 +82,22 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
       allegation_verified: false,
       physical_squatting_suspected: true,
       remediation_guidance:
-        'Zero database overlapping allocations found under PostgreSQL GiST exclusion constraint. Active customer holding legitimate reservation reference GB-992101 has sole right to workstation. Advise staff to politely instruct squatter to vacate or re-assign to idle station PC-03.',
+        "Exemplu local, fără acces la baza de date sau la rezervări reale. Nu a fost efectuat un audit al suprapunerilor și nu este stabilită o cauză. Într-un caz real, personalul verifică rezervările și urmează procedura aprobată a locației.",
     });
   }
 
   function runR2Refund() {
     if (!r2IntentRef.trim()) {
-      alert('Enter payment intent provider reference.');
+      alert("Introdu o referință ilustrativă pentru această simulare locală.");
       return;
     }
     setR2Result({
       provider_ref: r2IntentRef,
       orphan: true,
-      action_taken: 'REFUND_DISPATCHED',
+      action_taken: "REFUND_SIMULATED_LOCALLY",
       refund_id: `ref_${Date.now()}`,
-      notes: 'Compensating refund dispatched successfully via PaymentsService. Ledger reconciled.',
+      notes:
+        "Revizuire simulată local. Nu a fost trimisă nicio rambursare și nu a fost efectuată nicio reconciliere financiară reală.",
     });
   }
 
@@ -65,16 +108,17 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
         <div>
           <h2 className="font-extrabold text-base text-white flex items-center gap-2">
             <AlertOctagon className="w-5 h-5 text-rose-400" />
-            Operations Incident Runbooks & Pilot Launch Decision Engine (ENG-506)
+            Ghiduri operaționale · exemple locale
           </h2>
           <p className="text-xs text-slate-400">
-            Emergency runbooks R1–R6 and automated 7-gate launch evaluation for pilot venue go-live
+            Scenarii ilustrative. Fără audit al bazei de date, rambursare reală,
+            reconciliere financiară sau decizie de lansare.
           </p>
         </div>
 
         <div className="px-3.5 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-extrabold flex items-center gap-2 shadow-sm shadow-emerald-500/20">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          DECISION: GO FOR LAUNCH
+          DEMO · FĂRĂ DECIZIE DE LANSARE
         </div>
       </div>
 
@@ -82,7 +126,7 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
       <div className="glass-panel p-5 rounded-xl border border-slate-800 space-y-4">
         <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2 border-b border-slate-800 pb-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          Pilot Go/No-Go Launch Gates Evaluation (7 of 7 Passed)
+          Listă de revizuire · valori ilustrative
         </h3>
 
         <div className="space-y-2.5">
@@ -96,7 +140,7 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
                 <p className="text-slate-400 text-[11px]">{g.details}</p>
               </div>
               <span className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold text-[10px] flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> PASSED
+                <CheckCircle2 className="w-3.5 h-3.5" /> DEMO
               </span>
             </div>
           ))}
@@ -109,10 +153,11 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
         <div className="glass-panel p-5 rounded-xl border border-slate-800 space-y-4 text-xs">
           <h3 className="font-bold text-slate-200 flex items-center gap-2 text-sm border-b border-slate-800 pb-2">
             <Wrench className="w-4 h-4 text-cyan-400" />
-            Runbook R1: Double-Booking Audit
+            R1 / Revizuirea unei suprapuneri · demo
           </h3>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Distinguishes physical squatting from PostgreSQL database overlap by auditing GiST exclusion constraints.
+            Afișează un scenariu local prestabilit. Nu citește rezervări reale,
+            nu verifică baza de date și nu stabilește o cauză.
           </p>
 
           <div className="flex gap-2">
@@ -121,22 +166,31 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
               value={r1ResourceId}
               onChange={(e) => setR1ResourceId(e.target.value)}
               className="flex-1 bg-slate-950 border border-slate-700 px-3 py-1.5 rounded text-xs text-white"
-              placeholder="Resource Name / ID"
+              placeholder="ID loc · exemplu local"
             />
-            <button onClick={runR1Audit} className="btn-secondary text-xs py-1.5 px-3">
-              <Search className="w-3.5 h-3.5" /> Audit Claims
+            <button
+              onClick={runR1Audit}
+              className="btn-secondary text-xs py-1.5 px-3"
+            >
+              <Search className="w-3.5 h-3.5" /> Arată exemplul local
             </button>
           </div>
 
           {r1Result && (
             <div className="p-3.5 rounded-lg bg-cyan-950/20 border border-cyan-800/40 space-y-2 text-[11px]">
               <div className="flex justify-between font-bold">
-                <span className="text-cyan-300">Overlaps Found:</span>
-                <span className="text-emerald-400 font-mono">0 (Exclusion Constraint Intact)</span>
+                <span className="text-cyan-300">
+                  Suprapuneri · valoare ilustrativă:
+                </span>
+                <span className="text-emerald-400 font-mono">
+                  0 · exemplu, fără verificare
+                </span>
               </div>
               <div className="flex justify-between font-bold">
-                <span className="text-slate-300">Diagnosis:</span>
-                <span className="text-amber-300">Physical Squatting Suspected</span>
+                <span className="text-slate-300">Interpretare locală:</span>
+                <span className="text-amber-300">
+                  Scenariu ilustrativ, fără constatare
+                </span>
               </div>
               <p className="text-slate-300 pt-1 border-t border-slate-800 leading-relaxed">
                 {r1Result.remediation_guidance}
@@ -149,10 +203,11 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
         <div className="glass-panel p-5 rounded-xl border border-slate-800 space-y-4 text-xs">
           <h3 className="font-bold text-slate-200 flex items-center gap-2 text-sm border-b border-slate-800 pb-2">
             <RotateCcw className="w-4 h-4 text-amber-400" />
-            Runbook R2: Orphan PSP Payment Resolution
+            R2 / Revizuirea unei plăți · demo
           </h3>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Automatically issues an idempotent compensating refund for captured payment intents lacking booking links.
+            Afișează un exemplu de revizuire pentru o plată neasociată. Nu
+            contactează un furnizor și nu efectuează o rambursare.
           </p>
 
           <div className="flex gap-2">
@@ -161,18 +216,23 @@ export const OperationsRunbooks: React.FC<OperationsRunbooksProps> = ({ venueId,
               value={r2IntentRef}
               onChange={(e) => setR2IntentRef(e.target.value)}
               className="flex-1 bg-slate-950 border border-slate-700 px-3 py-1.5 rounded text-xs text-white"
-              placeholder="e.g. pi_orphan_99201"
+              placeholder="Referință ilustrativă · demo_99201"
             />
-            <button onClick={runR2Refund} className="btn-primary text-xs py-1.5 px-3">
-              Refund Orphan
+            <button
+              onClick={runR2Refund}
+              className="btn-primary text-xs py-1.5 px-3"
+            >
+              Simulează revizuirea locală
             </button>
           </div>
 
           {r2Result && (
             <div className="p-3.5 rounded-lg bg-emerald-950/20 border border-emerald-800/40 space-y-2 text-[11px]">
               <div className="flex justify-between font-bold">
-                <span className="text-emerald-300">Action:</span>
-                <span className="text-emerald-400">REFUND DISPATCHED</span>
+                <span className="text-emerald-300">Rezultat local:</span>
+                <span className="text-emerald-400">
+                  REVIZUIRE SIMULATĂ · FĂRĂ RAMBURSARE
+                </span>
               </div>
               <p className="text-slate-300 pt-1 border-t border-slate-800 leading-relaxed font-mono">
                 {r2Result.notes}

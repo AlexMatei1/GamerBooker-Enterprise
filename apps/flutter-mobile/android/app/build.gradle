@@ -22,9 +22,33 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0.0'
 }
 
+// ---------------------------------------------------------------------------
+// Release signing.
+//
+// A release APK signed with the debug key is not a release candidate: the debug
+// key is public, and gate 8 forbids calling such a build production. The previous
+// wiring fell back to `signingConfigs.debug`, which would have produced exactly
+// that silently shrink-wrapped artifact. Instead the release keystore is loaded
+// from private, non-committed material (android/key.properties, git-ignored) and
+// the build is configured to FAIL when it is missing. Debug/preview builds are
+// unaffected; only assembling a release requires the key.
+// ---------------------------------------------------------------------------
+def keystorePropertiesFile = rootProject.file('key.properties')
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.withReader('UTF-8') { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace "ro.gamerbooker.app"
-    compileSdk 34
+    // flutter_stripe 14 / activity 1.12 / core 1.17 publish AAR metadata that
+    // demands compileSdk 36. Compiling is a build-time concern only: targetSdk
+    // below stays where the app's runtime behaviour was accepted, so this is
+    // not a silent opt-in to Android 16 behaviour changes.
+    compileSdk 36
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -42,18 +66,53 @@ android {
 
     defaultConfig {
         applicationId "ro.gamerbooker.app"
-        minSdkVersion 21
+        minSdkVersion flutter.minSdkVersion
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
+        resValue "string", "app_name", "GamerBooker"
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix ".preview"
+            resValue "string", "app_name", "GamerBooker Preview"
+        }
         release {
-            signingConfig signingConfigs.debug
+            // Never fall back to the debug key: that would make a "release" APK
+            // installable but not a release candidate, and would pass silently.
+            // With no key.properties the other build types still compile, but any
+            // attempt to assemble a release variant fails loudly here instead of
+            // shipping false evidence.
+            signingConfig hasReleaseKeystore ? signingConfigs.release : null
             minifyEnabled false
             shrinkResources false
+        }
+    }
+    // Fail only when a release artifact is actually requested. Configuration of
+    // this module always includes the release build type, so throwing above
+    // would break debug builds too; the task graph tells us the real intent.
+    gradle.taskGraph.whenReady { graph ->
+        def wantsRelease = graph.allTasks.any { task ->
+            task.name.toLowerCase().contains('release')
+        }
+        if (wantsRelease && !hasReleaseKeystore) {
+            throw new GradleException(
+                'Release signing requires android/key.properties with storeFile, ' +
+                'storePassword, keyAlias and keyPassword. Refusing to sign a release ' +
+                'APK with the debug key.')
         }
     }
 }

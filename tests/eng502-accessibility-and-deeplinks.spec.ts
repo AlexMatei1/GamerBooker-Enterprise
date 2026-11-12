@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -75,7 +77,7 @@ describe('ENG-502 Customer Accessibility, Deep Links, and Mandatory Mobile App I
   let pc2Id: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng502');
+    app = await startTestApp('eng502', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'CyberZone SRL', 'CyberZone Promenada');
     foreignFixture = await createVenueWithRoles(app, 'Foreign Arena SRL', 'Foreign Club Cluj');
 

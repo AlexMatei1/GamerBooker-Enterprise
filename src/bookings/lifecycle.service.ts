@@ -15,6 +15,39 @@ import type {
   RescheduleResult,
 } from './lifecycle.types';
 
+/**
+ * Legacy rows may store policy settings either nested under `settings` or flat.
+ * Read defensively so a snapshot written by an older version still resolves.
+ */
+interface PolicySettingsView {
+  free_cancellation_hours?: number;
+  late_cancellation_penalty_percent?: number;
+  reschedule_cutoff_hours?: number;
+  slot_granularity_minutes?: number;
+  max_duration_minutes?: number;
+  no_show_grace_minutes?: number;
+  no_show_fee_percent?: number;
+  [key: string]: unknown;
+}
+
+function settingsOf(snapshot: unknown): PolicySettingsView {
+  if (typeof snapshot !== 'object' || snapshot === null) return {};
+  const record = snapshot as Record<string, unknown>;
+  const nested = record.settings;
+  if (typeof nested === 'object' && nested !== null) {
+    return nested as PolicySettingsView;
+  }
+  return record as PolicySettingsView;
+}
+
+/** Reads snapshot items defensively; the snapshot is a historical DB value. */
+function snapshotItems(snapshot: unknown): Array<{ hourly_rate_minor?: number }> {
+  if (typeof snapshot !== 'object' || snapshot === null) return [];
+  const items = (snapshot as Record<string, unknown>).items;
+  if (!Array.isArray(items)) return [];
+  return items as Array<{ hourly_rate_minor?: number }>;
+}
+
 @Injectable()
 export class LifecycleService {
   // ---------------------------------------------------------------------------
@@ -48,6 +81,7 @@ export class LifecycleService {
         );
       }
       const booking = res.rows[0];
+      if (booking.customer_id !== actorId) throw new AuthHttpError(HttpStatus.NOT_FOUND,'RESOURCE_NOT_FOUND','Resource not found.');
 
       if (booking.status !== 'CONFIRMED') {
         throw new AuthHttpError(
@@ -67,8 +101,7 @@ export class LifecycleService {
         );
       }
 
-      const policySnapshot = booking.policy_snapshot as any;
-      const settings = policySnapshot?.settings || policySnapshot;
+      const settings = settingsOf(booking.policy_snapshot);
 
       const freeCancelHours = settings?.free_cancellation_hours ?? 3;
       const lateCancelPenaltyPercent = settings?.late_cancellation_penalty_percent ?? 50;
@@ -230,6 +263,7 @@ export class LifecycleService {
         );
       }
       const booking = res.rows[0];
+      if (booking.customer_id !== actorId) throw new AuthHttpError(HttpStatus.NOT_FOUND,'RESOURCE_NOT_FOUND','Resource not found.');
 
       if (booking.status !== 'CONFIRMED') {
         throw new AuthHttpError(
@@ -248,8 +282,7 @@ export class LifecycleService {
       }
 
       // Check reschedule cutoff hours
-      const policySnapshot = booking.policy_snapshot as any;
-      const settings = policySnapshot?.settings || policySnapshot;
+      const settings = settingsOf(booking.policy_snapshot);
       const rescheduleCutoffHours = settings?.reschedule_cutoff_hours ?? 4;
 
       const hoursUntilStart =
@@ -486,6 +519,7 @@ export class LifecycleService {
     actorId: string,
     input: ExtendSessionInput,
     requestId?: string,
+    venueId?: string,
   ): Promise<ExtendSessionResult> {
     const pool = getPool();
     const reqId = requestId || randomUUID();
@@ -516,6 +550,10 @@ export class LifecycleService {
       }
       const booking = res.rows[0];
 
+      if (venueId ? booking.venue_id !== venueId : booking.customer_id !== actorId) {
+        throw new AuthHttpError(HttpStatus.NOT_FOUND, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+      }
+
       if (!['CONFIRMED', 'CHECKED_IN'].includes(booking.status)) {
         throw new AuthHttpError(
           HttpStatus.BAD_REQUEST,
@@ -533,8 +571,7 @@ export class LifecycleService {
       }
 
       // Check policy granularity and max duration
-      const policySnapshot = booking.policy_snapshot as any;
-      const settings = policySnapshot?.settings || policySnapshot;
+      const settings = settingsOf(booking.policy_snapshot);
 
       const granularity = settings?.slot_granularity_minutes ?? 15;
       if (input.additional_minutes % granularity !== 0) {
@@ -580,10 +617,9 @@ export class LifecycleService {
       }
 
       // 4. Calculate extension price from effective rates
-      const priceSnapshot = booking.price_snapshot as any;
-      const items = priceSnapshot?.items || [];
+      const items = snapshotItems(booking.price_snapshot);
       const totalHourlyRateMinor = items.reduce(
-        (sum: number, it: any) => sum + (it.hourly_rate_minor || 2000),
+        (sum: number, it) => sum + (it.hourly_rate_minor || 2000),
         0,
       ) || 2000;
 
@@ -730,9 +766,9 @@ export class LifecycleService {
 
       if (booking.venue_id !== venueId) {
         throw new AuthHttpError(
-          HttpStatus.FORBIDDEN,
-          'VENUE_MISMATCH',
-          'Booking belongs to a different venue',
+          HttpStatus.NOT_FOUND,
+          'RESOURCE_NOT_FOUND',
+          'Resource not found.',
         );
       }
 
@@ -753,8 +789,7 @@ export class LifecycleService {
       }
 
       // Check grace period
-      const policySnapshot = booking.policy_snapshot as any;
-      const settings = policySnapshot?.settings || policySnapshot;
+      const settings = settingsOf(booking.policy_snapshot);
 
       const graceMinutes = settings?.no_show_grace_minutes ?? 15;
       const startMs = new Date(booking.starts_at).getTime();

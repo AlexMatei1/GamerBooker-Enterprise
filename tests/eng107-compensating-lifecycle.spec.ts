@@ -40,6 +40,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -57,7 +58,7 @@ describe('ENG-107 Client Cancel/Modify/Extend & Compensating Workflows', () => {
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng107');
+      app = await startTestApp('eng107', { browserClient: true });
       ownerFixture = await createTenantAndVenue(app, 'NextGen Gaming SRL', 'NextGen Lounge', 'OWNER');
 
       customerA = await app.verifiedUser();
@@ -148,9 +149,15 @@ describe('ENG-107 Client Cancel/Modify/Extend & Compensating Workflows', () => {
     expect(holdRes.status).toBe(201);
     const hold = holdRes.json as { id: string };
 
+    // The confirm guard requires server-side proof of the upfront charge; the
+    // fixture settles the hold the way the PSP webhook would.
+    const upfrontIntentId = await app.settleHoldPayment(hold.id);
     const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: userCookie },
-      body: { hold_id: hold.id },
+      body: {
+        hold_id: hold.id,
+        ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+      },
     });
     expect(confirmRes.status).toBe(201);
     return confirmRes.json as {

@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -74,7 +76,7 @@ describe('ENG-202 Resource CRUD and Bulk Clone/Import', () => {
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng202');
+      app = await startTestApp('eng202', { browserClient: true });
       fixtures = await createVenueWithRoles(app, 'Nexus Gaming SRL', 'Nexus Hub Bucharest');
       const other = await createVenueWithRoles(app, 'Rival Gaming SRL', 'Rival Lounge Cluj');
       otherVenue = { owner: other.owner, venueId: other.venueId };

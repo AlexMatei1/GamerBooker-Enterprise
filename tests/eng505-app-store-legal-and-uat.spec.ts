@@ -38,6 +38,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -51,6 +52,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -91,7 +93,7 @@ describe('ENG-505 App Store Submission, Legal/Fiscal Sign-Offs, and 1-Venue UAT'
   let orderBarId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng505');
+    app = await startTestApp('eng505', { browserClient: true });
     pilotVenue = await createVenueWithRoles(app, 'Arena Pilot Gaming SRL', 'Arena Pilot Bucharest');
 
     const c1 = await app.verifiedUser();
@@ -181,6 +183,7 @@ describe('ENG-505 App Store Submission, Legal/Fiscal Sign-Offs, and 1-Venue UAT'
       const res = await app.call(
         'GET',
         `/v1/compliance/venues/${pilotVenue.venueId}/fiscal-status`,
+        { headers: { cookie: pilotVenue.owner.cookie } },
       );
       expect(res.status).toBe(200);
       const status = res.json as any;
@@ -400,9 +403,15 @@ describe('ENG-505 App Store Submission, Legal/Fiscal Sign-Offs, and 1-Venue UAT'
       expect(holdRes.status).toBe(201);
       soloHoldId = (holdRes.json as any).id;
 
+      // The confirm guard requires server-side proof of the upfront deposit;
+      // settle the hold the way the PSP webhook would.
+      const upfrontIntentId = await app.settleHoldPayment(soloHoldId);
       const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
         headers: { cookie: customer1.cookie },
-        body: { hold_id: soloHoldId },
+        body: {
+          hold_id: soloHoldId,
+          ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+        },
       });
       expect(confirmRes.status).toBe(201);
       const booking = confirmRes.json as any;

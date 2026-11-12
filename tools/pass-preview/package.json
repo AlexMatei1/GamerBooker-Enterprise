@@ -1,0 +1,1 @@
+{"private":true,"type":"commonjs","scripts":{"test":"node --experimental-strip-types --test --experimental-test-isolation=none *.test.cjs","start":"node server.cjs"}}

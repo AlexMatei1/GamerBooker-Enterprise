@@ -13,17 +13,73 @@ import type {
   QrTokenData,
   ScanCheckinInput,
   SoloCheckoutInput,
+  SoloPaymentIntentResult,
+  SoloPaymentIntentStatusResult,
   SoloCheckoutResult,
   PayBalanceOnlineInput,
   PayBalanceOnlineResult,
   ReceiptFilterQuery,
-  ReceiptLedgerItem,
   ReceiptLedgerResult,
   VoidReceiptInput,
   VoidReceiptResult,
 } from './checkout.types';
 
 export const DEFAULT_QR_SECRET = 'gamerbooker-qr-token-secret-0123456789abcdef';
+
+/** Offline receipt row (optionally joined with booking/staff labels). */
+interface OfflineReceiptRow {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  booking_id: string;
+  booking_public_code: string;
+  staff_id: string;
+  staff_name: string | null;
+  amount_minor: string | number;
+  payment_method: string;
+  reference: string;
+  notes: string | null;
+  voided_at?: Date | string | null;
+  voided_by?: string | null;
+  void_reason?: string | null;
+  created_at: Date | string;
+}
+
+/** Aggregated receipt-ledger totals row. */
+interface ReceiptLedgerSummaryRow {
+  total_count: string | number;
+  total_collected_minor: string | number;
+  cash_collected_minor: string | number;
+  card_collected_minor: string | number;
+  voided_count: string | number;
+}
+
+/**
+ * Legacy rows may store policy settings either nested under `settings` or flat.
+ * Read defensively so snapshots written by an older version still resolve.
+ */
+interface PolicySettingsView {
+  prepaid_mode?: 'FULL' | 'DEPOSIT';
+  deposit_percentage?: number;
+  deposit_mode_settlement?: string;
+  remaining_payment_methods?: unknown;
+}
+
+function policySettings(snapshot: unknown): PolicySettingsView {
+  if (typeof snapshot !== 'object' || snapshot === null) return {};
+  const record = snapshot as Record<string, unknown>;
+  const nested = record.settings;
+  if (typeof nested === 'object' && nested !== null) {
+    return nested as PolicySettingsView;
+  }
+  return record as PolicySettingsView;
+}
+
+/** Returns the string members of an unknown array, or the fallback. */
+function stringArray(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  return value.filter((item): item is string => typeof item === 'string');
+}
 
 interface RawQrPayload {
   b: string; // booking_id
@@ -47,7 +103,7 @@ export class CheckoutService implements OnModuleInit {
 
   onModuleInit() {
     this.paymentsService?.onPaymentCaptured(async (intent) => {
-      if (intent.metadata && (intent.metadata as any).type === 'ONLINE_BALANCE_PAYMENT') {
+      if (intent.metadata?.type === 'ONLINE_BALANCE_PAYMENT') {
         await this.handleBalancePaymentCaptured(intent.provider_ref);
       }
     });
@@ -164,6 +220,149 @@ export class CheckoutService implements OnModuleInit {
       booking,
       qr_token: qrData.token,
       qr_expires_at: qrData.expires_at,
+    };
+  }
+
+  async createSoloPaymentIntent(
+    customerId: string,
+    holdId: string,
+    requestId?: string,
+  ): Promise<SoloPaymentIntentResult> {
+    const pool = getPool();
+    const reqId = requestId || randomUUID();
+    const found = await pool.query<{
+      id: string;
+      tenant_id: string;
+      venue_id: string;
+      customer_id: string;
+      quote_id: string;
+      status: string;
+      expires_at: Date;
+      due_now_minor: string;
+      currency: string;
+    }>(
+      `SELECT h.id, h.tenant_id, h.venue_id, h.customer_id, h.quote_id,
+              h.status, h.expires_at, q.due_now_minor, q.currency
+         FROM holds h JOIN price_quotes q ON q.id = h.quote_id
+        WHERE h.id = $1`,
+      [holdId],
+    );
+    const hold = found.rows[0];
+    if (!hold) {
+      throw new AuthHttpError(HttpStatus.NOT_FOUND, 'HOLD_NOT_FOUND', 'Hold not found');
+    }
+    if (hold.customer_id !== customerId) {
+      throw new AuthHttpError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'Hold belongs to another customer');
+    }
+    if (hold.status !== 'ACTIVE' || new Date(hold.expires_at).getTime() <= Date.now()) {
+      throw new AuthHttpError(HttpStatus.CONFLICT, 'HOLD_NOT_ACTIVE', 'Hold is not active');
+    }
+
+    const amountMinor = Number(hold.due_now_minor);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+      throw new AuthHttpError(HttpStatus.BAD_REQUEST, 'ZERO_DUE_NOW', 'No upfront payment is required');
+    }
+
+    // This endpoint is intentionally live-provider-only. Sandbox intents are
+    // test fixtures and must never be presented as money collected online.
+    const idempotencyKey = `solo-booking:${hold.id}:${hold.quote_id}:${amountMinor}`;
+    let intent;
+    try {
+      intent = await this.getPayments().createIntent(
+        hold.tenant_id,
+        hold.venue_id,
+        {
+          amountMinor,
+          currency: 'RON',
+          reference: `Hold:${hold.id}:Upfront`,
+          idempotencyKey,
+          metadata: {
+            type: 'SOLO_BOOKING_CHECKOUT',
+            hold_id: hold.id,
+            customer_id: customerId,
+          },
+        },
+        'stripe',
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('PSP_NOT_CONFIGURED:')) {
+        throw new AuthHttpError(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          'PAYMENT_PROVIDER_UNAVAILABLE',
+          'Online payment is not configured for this environment',
+        );
+      }
+      throw error;
+    }
+
+    await pool.query(
+      `INSERT INTO audit_events (
+         tenant_id, venue_id, request_id, actor_id, actor_role,
+         action, target_type, target_id, metadata
+       ) VALUES ($1, $2, $3, $4, 'CUSTOMER', 'SOLO_PAYMENT_INTENT_CREATED', 'HOLD', $5, $6)`,
+      [
+        hold.tenant_id,
+        hold.venue_id,
+        reqId,
+        customerId,
+        hold.id,
+        JSON.stringify({ payment_intent_id: intent.intentId, amount_minor: amountMinor }),
+      ],
+    );
+
+    return {
+      intent_id: intent.intentId,
+      provider_ref: intent.providerRef,
+      client_secret: intent.clientSecret,
+      amount_minor: amountMinor,
+      currency: hold.currency || 'RON',
+      hold_id: hold.id,
+      status: intent.status,
+      hold_expires_at: new Date(hold.expires_at).toISOString(),
+    };
+  }
+
+  async getSoloPaymentIntentStatus(
+    customerId: string,
+    holdId: string,
+    intentId: string,
+  ): Promise<SoloPaymentIntentStatusResult> {
+    const pool = getPool();
+    const result = await pool.query<{
+      id: string;
+      amount_minor: string;
+      currency: string;
+      status: SoloPaymentIntentStatusResult['status'];
+      updated_at: Date;
+    }>(
+      `SELECT pi.id, pi.amount_minor, pi.currency, pi.status, pi.updated_at
+         FROM holds h
+         JOIN payment_intents pi
+           ON pi.tenant_id = h.tenant_id
+          AND pi.venue_id = h.venue_id
+        WHERE h.id = $1
+          AND h.customer_id = $2
+          AND pi.id = $3
+          AND pi.metadata ->> 'type' = 'SOLO_BOOKING_CHECKOUT'
+          AND pi.metadata ->> 'hold_id' = h.id::text
+          AND pi.metadata ->> 'customer_id' = h.customer_id::text`,
+      [holdId, customerId, intentId],
+    );
+    const intent = result.rows[0];
+    if (!intent) {
+      throw new AuthHttpError(
+        HttpStatus.NOT_FOUND,
+        'PAYMENT_INTENT_NOT_FOUND',
+        'Payment intent not found for this hold',
+      );
+    }
+    return {
+      intent_id: intent.id,
+      hold_id: holdId,
+      amount_minor: Number(intent.amount_minor),
+      currency: intent.currency,
+      status: intent.status,
+      updated_at: new Date(intent.updated_at).toISOString(),
     };
   }
 
@@ -354,8 +553,10 @@ export class CheckoutService implements OnModuleInit {
 
       await client.query('COMMIT');
 
-      const policy = booking.policy_snapshot as any;
-      const remainingMethods = policy?.remaining_payment_methods || ['ONLINE_OR_RECEPTION'];
+      const policy = policySettings(booking.policy_snapshot);
+      const remainingMethods = stringArray(policy.remaining_payment_methods, [
+        'ONLINE_OR_RECEPTION',
+      ]);
 
       return {
         status: 'CHECKED_IN',
@@ -381,8 +582,17 @@ export class CheckoutService implements OnModuleInit {
 
   async getBalanceSummary(bookingId: string, customerId?: string): Promise<BalanceSummary> {
     const booking = await this.bookingsService.getBookingById(bookingId, customerId);
-    const policy = booking.policy_snapshot as any;
-    const settings = policy?.settings || policy;
+    const settings = policySettings(booking.policy_snapshot);
+    const prepaidMode =
+      settings.prepaid_mode === 'FULL' || settings.prepaid_mode === 'DEPOSIT'
+        ? settings.prepaid_mode
+        : booking.balance_minor === 0
+          ? 'FULL'
+          : 'DEPOSIT';
+    const depositSettlement =
+      typeof settings.deposit_mode_settlement === 'string'
+        ? settings.deposit_mode_settlement
+        : null;
 
     return {
       booking_id: booking.id,
@@ -391,10 +601,11 @@ export class CheckoutService implements OnModuleInit {
       paid_minor: booking.paid_minor,
       balance_minor: booking.balance_minor,
       currency: booking.currency,
-      prepaid_mode: settings?.prepaid_mode || (booking.balance_minor === 0 ? 'FULL' : 'DEPOSIT'),
-      deposit_percentage: settings?.deposit_percentage,
-      remaining_payment_methods: settings?.deposit_mode_settlement
-        ? [settings.deposit_mode_settlement]
+      prepaid_mode: prepaidMode,
+      deposit_percentage:
+        typeof settings.deposit_percentage === 'number' ? settings.deposit_percentage : undefined,
+      remaining_payment_methods: depositSettlement
+        ? [depositSettlement]
         : ['ONLINE_OR_RECEPTION'],
       is_fully_paid: booking.balance_minor === 0,
     };
@@ -446,6 +657,18 @@ export class CheckoutService implements OnModuleInit {
 
       const balanceMinor = Number(booking.balance_minor);
       const paidMinor = Number(booking.paid_minor);
+
+      // T-022: an ONLINE_ONLY venue forbids settling the remaining balance at the
+      // desk. Without this the policy was only a customer-facing string, and
+      // reception could record cash the venue had declared it cannot accept.
+      const deskPolicy = policySettings(booking.policy_snapshot);
+      if (deskPolicy.deposit_mode_settlement === 'ONLINE_ONLY') {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'ONLINE_SETTLEMENT_ONLY',
+          'Venue policy requires the remaining balance to be settled online; the desk cannot record it.',
+        );
+      }
 
       // 2. Prevent overpayment
       if (input.amount_minor > balanceMinor) {
@@ -584,9 +807,11 @@ export class CheckoutService implements OnModuleInit {
       );
     }
 
-    const policy = booking.policy_snapshot as any;
-    const settings = policy?.settings || policy;
-    const allowedMethods = settings?.deposit_mode_settlement || 'ONLINE_OR_RECEPTION';
+    const settings = policySettings(booking.policy_snapshot);
+    const allowedMethods =
+      typeof settings.deposit_mode_settlement === 'string'
+        ? settings.deposit_mode_settlement
+        : 'ONLINE_OR_RECEPTION';
     if (allowedMethods === 'RECEPTION_ONLY') {
       throw new AuthHttpError(
         HttpStatus.BAD_REQUEST,
@@ -655,6 +880,7 @@ export class CheckoutService implements OnModuleInit {
   async handleBalancePaymentCaptured(
     providerRef: string,
     requestId?: string,
+    customerId?: string,
   ): Promise<{ applied_minor: number; refunded_minor: number; new_balance_minor: number }> {
     const pool = getPool();
     const reqId = requestId || randomUUID();
@@ -671,6 +897,16 @@ export class CheckoutService implements OnModuleInit {
         throw new AuthHttpError(HttpStatus.NOT_FOUND, 'PAYMENT_INTENT_NOT_FOUND', 'Payment intent not found');
       }
       const pi = piRes.rows[0];
+
+      // When called from an authenticated customer route, the caller must be
+      // the customer the intent was created for. The trusted server-side
+      // webhook path calls this without a customerId and skips the check.
+      // payment_intents has no customer_id column: ownership is recorded in
+      // the metadata written by createOnlineBalanceIntent.
+      const intentCustomerId = pi.metadata?.customer_id;
+      if (customerId && intentCustomerId && intentCustomerId !== customerId) {
+        throw new AuthHttpError(HttpStatus.FORBIDDEN, 'PAYMENT_INTENT_NOT_AUTHORIZED', 'Payment intent does not belong to the authenticated customer');
+      }
 
       if (!pi.booking_id) {
         await client.query('COMMIT');
@@ -839,7 +1075,7 @@ export class CheckoutService implements OnModuleInit {
   ): Promise<ReceiptLedgerResult> {
     const pool = getPool();
     const conditions: string[] = ['r.venue_id = $1'];
-    const params: any[] = [venueId];
+    const params: unknown[] = [venueId];
     let pIdx = 2;
 
     if (filter.from) {
@@ -877,7 +1113,7 @@ export class CheckoutService implements OnModuleInit {
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const itemsRes = await pool.query<any>(itemsQuery, params);
+    const itemsRes = await pool.query<OfflineReceiptRow>(itemsQuery, params);
 
     const summaryQuery = `
       SELECT
@@ -890,7 +1126,7 @@ export class CheckoutService implements OnModuleInit {
       WHERE ${whereClause}
     `;
 
-    const sumRes = await pool.query<any>(summaryQuery, params);
+    const sumRes = await pool.query<ReceiptLedgerSummaryRow>(summaryQuery, params);
     const sumRow = sumRes.rows[0];
 
     return {
@@ -898,9 +1134,9 @@ export class CheckoutService implements OnModuleInit {
         id: r.id,
         venue_id: r.venue_id,
         booking_id: r.booking_id,
-        booking_public_code: r.booking_public_code,
+        booking_public_code: r.booking_public_code || undefined,
         staff_id: r.staff_id,
-        staff_name: r.staff_name || null,
+        staff_name: r.staff_name || undefined,
         amount_minor: Number(r.amount_minor),
         payment_method: r.payment_method,
         reference: r.reference,
@@ -941,7 +1177,7 @@ export class CheckoutService implements OnModuleInit {
     try {
       await client.query('BEGIN');
 
-      const rRes = await client.query<any>(
+      const rRes = await client.query<OfflineReceiptRow>(
         'SELECT * FROM offline_receipts WHERE id = $1 AND venue_id = $2 FOR UPDATE',
         [receiptId, venueId],
       );

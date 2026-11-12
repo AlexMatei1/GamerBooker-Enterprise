@@ -43,7 +43,7 @@ export class ObservabilityService {
   async getSecurityMetrics(tenantId?: string): Promise<SecurityMetricsSummary> {
     const pool = getPool();
     let filterSql = "WHERE action = 'SECURITY_VIOLATION'";
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     if (tenantId) {
       filterSql += ' AND tenant_id = $1';
@@ -73,7 +73,7 @@ export class ObservabilityService {
       actor_id?: string | null;
       target_type?: string | null;
       target_id?: string | null;
-      metadata: any;
+      metadata: { violation_type?: string } | null;
       occurred_at: string;
     }>(
       `SELECT id, actor_id, target_type, target_id, metadata, occurred_at

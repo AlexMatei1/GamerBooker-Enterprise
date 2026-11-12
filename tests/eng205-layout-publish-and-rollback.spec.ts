@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -77,7 +79,7 @@ describe('ENG-205 Layout Draft Validation, Atomic Publish, Customer Preview, and
   let pc3Id: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng205');
+    app = await startTestApp('eng205', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Apex Gaming Corp SRL', 'Apex Arena Timisoara');
     foreignFixtures = await createVenueWithRoles(app, 'Rival Gaming SRL', 'Rival Lounge Iasi');
     customerUser = await app.verifiedUser();

@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -75,7 +77,7 @@ describe('ENG-203 Free-Form Geometry Scene, Editor Layers, Multi-Room and Preset
   let pc2Id: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng203');
+    app = await startTestApp('eng203', { browserClient: true });
     fixtures = await createVenueWithRoles(app, 'Nexus Gaming Arena SRL', 'Nexus Bucharest');
     foreignFixtures = await createVenueWithRoles(app, 'CyberZone Corp', 'CyberZone Cluj');
 

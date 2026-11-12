@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Param,
@@ -29,12 +30,17 @@ export class WebhooksController {
   ): Promise<WebhookProcessResult> {
     const signature = xSignature || stripeSignature || genericSignature || '';
 
-    // Prefer original raw byte buffer if captured by middleware; otherwise re-serialize
-    const rawBody = req.rawBody
-      ? req.rawBody
-      : typeof req.body === 'string'
-      ? Buffer.from(req.body, 'utf8')
-      : Buffer.from(JSON.stringify(req.body ?? {}), 'utf8');
+    // A signature is a MAC over the bytes the PSP sent. Re-serialising a parsed
+    // body changes key order and whitespace, so a hash computed over it would not
+    // be the PSP's signature: accepting that fallback would mean verifying
+    // nothing. When raw capture is absent the only truthful answer is to refuse.
+    const rawBody = req.rawBody;
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
+      throw new BadRequestException({
+        code: 'WEBHOOK_RAW_BODY_MISSING',
+        message: 'Raw webhook body is required to verify the provider signature.',
+      });
+    }
 
     return this.paymentsService.processWebhook(provider, rawBody, signature);
   }

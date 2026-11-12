@@ -73,3 +73,9 @@ export class VenueRoleGuard implements CanActivate {
 export function notFound(): AuthHttpError {
   return new AuthHttpError(HttpStatus.NOT_FOUND, 'RESOURCE_NOT_FOUND', 'Resource not found.');
 }
+
+/** Temporary closure for legacy operational routes without tenant-safe contracts. */
+@Injectable()
+export class ClosedLegacyGuard implements CanActivate {
+  canActivate(): boolean { throw notFound(); }
+}

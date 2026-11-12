@@ -16,6 +16,18 @@ export const APP_STORE_URL = 'https://apps.apple.com/app/gamerbooker/id166987654
 export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=ro.gamerbooker.app';
 export const WEB_BASE_URL = 'https://gamerbooker.ro';
 
+/** Row shape of a `deferred_deeplinks` record. */
+interface DeferredLinkRow {
+  id: string;
+  token: string;
+  venue_id: string;
+  zone_id: string | null;
+  package_id: string | null;
+  metadata: Record<string, unknown> | null;
+  expires_at: Date;
+  consumed: boolean;
+}
+
 @Injectable()
 export class DeepLinkService {
   resolvePlatform(userAgent?: string): DevicePlatform {
@@ -134,7 +146,7 @@ export class DeepLinkService {
     const ttlSeconds = input.ttl_seconds || 7 * 24 * 3600;
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
-    const res = await pool.query<any>(
+    const res = await pool.query<DeferredLinkRow>(
       `INSERT INTO deferred_deeplinks (
          token, venue_id, zone_id, package_id, metadata, expires_at
        )
@@ -156,7 +168,7 @@ export class DeepLinkService {
       venue_id: row.venue_id,
       zone_id: row.zone_id,
       package_id: row.package_id,
-      metadata: row.metadata,
+      metadata: row.metadata ?? {},
       expires_at: row.expires_at.toISOString(),
       consumed: row.consumed,
     };
@@ -164,7 +176,7 @@ export class DeepLinkService {
 
   async getDeferredLink(token: string): Promise<DeferredLinkResult> {
     const pool = getPool();
-    const res = await pool.query<any>(
+    const res = await pool.query<DeferredLinkRow>(
       'SELECT * FROM deferred_deeplinks WHERE token = $1',
       [token],
     );
@@ -192,11 +204,13 @@ export class DeepLinkService {
       [row.id],
     );
 
+    const sourceTag =
+      typeof row.metadata?.source_tag === 'string' ? row.metadata.source_tag : undefined;
     await this.recordFunnelEvent({
       venue_id: row.venue_id,
       session_id: token,
       milestone: 'DEFERRED_LINK_RESOLVED',
-      source_tag: row.metadata?.source_tag,
+      source_tag: sourceTag,
     });
 
     return {
@@ -204,7 +218,7 @@ export class DeepLinkService {
       venue_id: row.venue_id,
       zone_id: row.zone_id,
       package_id: row.package_id,
-      metadata: row.metadata,
+      metadata: row.metadata ?? {},
       expires_at: new Date(row.expires_at).toISOString(),
       consumed: true,
     };

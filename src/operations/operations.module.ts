@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { GoogleSheetsService } from './google-sheets.service';
 import { RunbooksService } from './runbooks.service';
 import {
   RunbooksController,
@@ -15,7 +16,7 @@ import {
     TrainingController,
     PilotMetricsController,
   ],
-  providers: [RunbooksService],
-  exports: [RunbooksService],
+  providers: [RunbooksService, GoogleSheetsService],
+  exports: [RunbooksService, GoogleSheetsService],
 })
 export class OperationsModule {}

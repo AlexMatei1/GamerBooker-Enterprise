@@ -44,6 +44,7 @@ async function createTenantAndVenue(
         ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
       [user.userId],
     );
+    user.cookie = await app.elevateMfa(user.cookie);
   }
 
   return { ...user, tenantId, venueId };
@@ -61,7 +62,7 @@ describe('ENG-103 Price Quote with Minor-Unit Exact Arithmetic and Expiry', () =
   let customPcId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng103');
+    app = await startTestApp('eng103', { browserClient: true });
     ownerFixture = await createTenantAndVenue(app, 'CyberZone SRL', 'CyberZone Arena', 'OWNER');
     foreignFixture = await createTenantAndVenue(app, 'Alienware Arena SRL', 'Alienware Lounge', 'OWNER');
 

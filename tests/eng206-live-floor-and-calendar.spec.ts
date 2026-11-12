@@ -35,6 +35,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -48,6 +49,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const receptionUser = await app.verifiedUser();
@@ -77,7 +79,7 @@ describe('ENG-206 Live Floor and Calendar, Check-in Queue, Maintenance Blocks', 
 
   beforeAll(async () => {
     try {
-      app = await startTestApp('eng206');
+      app = await startTestApp('eng206', { browserClient: true });
       fixtures = await createVenueWithRoles(app, 'Cyber Operations SRL', 'Cyber Arena Downtown');
       customerA = await app.verifiedUser();
 

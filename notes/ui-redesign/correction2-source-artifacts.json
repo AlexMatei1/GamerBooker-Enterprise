@@ -1,0 +1,229 @@
+{
+  "recordedUtc": "2026-11-05T03:00:41.708572+00:00",
+  "requestedModel": "gpt-6.1-sol",
+  "clientIdentity": "not independently authenticated",
+  "round": "Correction2 copy-only; final independent verification/review pending",
+  "scopeChecks": [
+    {
+      "path": "apps/mobile-app/src/App.tsx",
+      "sha256": "c2d5fd3b45a8e489bbd387490ef4b2cf0cdc264a4dc5b40a983ef8948f9d6d9d",
+      "mtimeUtc": "2026-11-05T02:42:55.246445+00:00",
+      "bytes": 10486,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/api/client.ts",
+      "sha256": "1ed2fcb1d3fea721a5a260bf6a123e363582d50464cea28bf94b2d6f0f6ae1d5",
+      "mtimeUtc": "2026-11-05T02:38:24.769507+00:00",
+      "bytes": 8352,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/types/mobile.ts",
+      "sha256": "d15c2b3df609f7a3a4025ffbb97e0cc32bfc6a358bbd3d5842b44536e4272fc1",
+      "mtimeUtc": "2026-11-05T02:38:24.782023+00:00",
+      "bytes": 2317,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/utils/demoTime.ts",
+      "sha256": "00c3a6d1d6261b6f3289be980000fcfb3ca804add7e6c97e076cf8f358bdb587",
+      "mtimeUtc": "2026-11-05T02:38:24.793070+00:00",
+      "bytes": 818,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/components/SeatPicker.tsx",
+      "sha256": "4507f955710f715d4ac1207f2b63e3f4a3ef3e7b120bdbc82081f83b2cb7d05b",
+      "mtimeUtc": "2026-11-05T02:38:24.870385+00:00",
+      "bytes": 5523,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/components/BookingCheckout.tsx",
+      "sha256": "2d7fe51788f3a7172190681095fc55d284a0932705c73bdece047c16fad3caa3",
+      "mtimeUtc": "2026-11-05T02:38:24.815484+00:00",
+      "bytes": 6059,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/components/ActivePassView.tsx",
+      "sha256": "21122ed6c347221883b6e2c2ea03b3fd022b1d902e928d57418fe0cec023b3c3",
+      "mtimeUtc": "2026-11-05T02:38:24.827998+00:00",
+      "bytes": 3485,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/components/BarOrderingView.tsx",
+      "sha256": "7ac27e8cc06c3ffcd5bffa2fb750be215dae3ab811ccb767de82f4a1b0edafd9",
+      "mtimeUtc": "2026-11-05T02:38:24.853177+00:00",
+      "bytes": 7323,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/src/services/realtime.ts",
+      "sha256": "3e19274a177c6bfa881817088fbf4f9de98b6890608116fabbc993c738f988e3",
+      "mtimeUtc": "2026-11-05T02:39:42.193009+00:00",
+      "bytes": 4835,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/venue-dashboard/src/api/client.ts",
+      "sha256": "ea7100fbd5233bead3d18edc01845f6a87afb0539baefd6470e922479bc2940e",
+      "mtimeUtc": "2026-11-05T02:42:55.453358+00:00",
+      "bytes": 15495,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/venue-dashboard/src/services/realtime.ts",
+      "sha256": "1baa5d5fdbafc056fabc75eaaca8b6dae5c4a6b98d190a83023249a6b4a198b3",
+      "mtimeUtc": "2026-11-05T02:39:42.341292+00:00",
+      "bytes": 5257,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/LiveFloorView.tsx",
+      "sha256": "ef6af8a9ff0301d608eededf8df3a9be7b9b47f54650a669f71db315a073c8df",
+      "mtimeUtc": "2026-11-05T02:38:25.002961+00:00",
+      "bytes": 17372,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/BarBoard.tsx",
+      "sha256": "97b9ba2bc60bba54a631426b9d933f4b225d4ede0643c5a9e9a9a5823c346c07",
+      "mtimeUtc": "2026-11-05T02:42:55.413734+00:00",
+      "bytes": 19267,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/FinancialLedger.tsx",
+      "sha256": "704a3f8d05109933b245c68136dacb148de6e8c03583f432a0d7ccad5dc83769",
+      "mtimeUtc": "2026-11-05T02:58:06.513224+00:00",
+      "bytes": 17667,
+      "matchesCorrection1": false
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/OperationsRunbooks.tsx",
+      "sha256": "1a7ec8a5fee362f8ed34d6158fb821589c4e04a2928e470d1d0fb4a4b04bb671",
+      "mtimeUtc": "2026-11-05T02:58:06.461978+00:00",
+      "bytes": 9288,
+      "matchesCorrection1": false
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/StationClientShell.tsx",
+      "sha256": "cca8d0773eafb0d227a06a941c277cb5c73103fcece32828cde7a7fafdba50d4",
+      "mtimeUtc": "2026-11-05T02:38:25.044682+00:00",
+      "bytes": 16042,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/flutter-mobile/lib/parity_app.dart",
+      "sha256": "b5cd6925a16717e58a6edc3bc0d092e61f288e0ac0449836a4d5295eeb594166",
+      "mtimeUtc": "2026-11-05T02:38:25.562681+00:00",
+      "bytes": 74453,
+      "matchesCorrection1": true
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "apps/venue-dashboard/dist/assets/index-CO-Tb9Qe.js",
+      "sha256": "48291e755d879125968293b79bccc3aa15f8cc0566ec43e29df58a9acb716ac7",
+      "mtimeUtc": "2026-11-05T02:59:42.461002+00:00",
+      "bytes": 246042
+    },
+    {
+      "path": "apps/venue-dashboard/dist/assets/index-DL8jk5su.css",
+      "sha256": "786803a3e87e0b630fb2dc779be5b5677f3b1a1e7edbde9f1986358412e9e23a",
+      "mtimeUtc": "2026-11-05T02:59:42.461002+00:00",
+      "bytes": 40725
+    },
+    {
+      "path": "apps/venue-dashboard/dist/index.html",
+      "sha256": "29509c8c09abacc8b2d891ec374085b62b20441a3b3722eddc3863dd3f2e97ec",
+      "mtimeUtc": "2026-11-05T02:59:42.461002+00:00",
+      "bytes": 504,
+      "matchesCorrection1": false
+    },
+    {
+      "path": "apps/mobile-app/dist/.well-known/apple-developer-merchantid-domain-association",
+      "sha256": "4752fd64f6afc94b43f6c2dd9b11b34db886ea9a43ac61dff82529f98b1e37b8",
+      "mtimeUtc": "2026-11-04T02:32:42.434446+00:00",
+      "bytes": 343
+    },
+    {
+      "path": "apps/mobile-app/dist/assets/index-C3Ju0Hph.css",
+      "sha256": "d523b2878c31ae3df95aaffb315bd5809fd41397ad9c53a9e050ba4cb36cdc06",
+      "mtimeUtc": "2026-11-05T02:43:46.020260+00:00",
+      "bytes": 22933
+    },
+    {
+      "path": "apps/mobile-app/dist/assets/index-CrZhkuUy.js",
+      "sha256": "4dc00b04c287370ecfb7b19e31edd35125b1af4087b0c8c44127bd3357d23268",
+      "mtimeUtc": "2026-11-05T02:43:46.021259+00:00",
+      "bytes": 185797
+    },
+    {
+      "path": "apps/mobile-app/dist/index.html",
+      "sha256": "c50e5a30490935454f8c78222b652ad6fcaf47a4164b5e577b6cd29c43aa578e",
+      "mtimeUtc": "2026-11-05T02:43:46.006054+00:00",
+      "bytes": 496,
+      "matchesCorrection1": true
+    },
+    {
+      "path": "apps/mobile-app/dist/manifest.webmanifest",
+      "sha256": "e6316d947e5df08076ad6b6db985316c4fd65ae39b8424590ed35341efc71998",
+      "mtimeUtc": "2026-11-02T14:38:46.301773+00:00",
+      "bytes": 509
+    },
+    {
+      "path": "apps/flutter-mobile/build/app/outputs/flutter-apk/app-debug.apk",
+      "sha256": "7579e995973f0c822f3e3c90019752b7c0672252336264c1132cda24609884cf",
+      "mtimeUtc": "2026-11-05T02:44:23.176404+00:00",
+      "bytes": 165423973,
+      "matchesCorrection1": true
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "notes/ui-redesign/correction2-ledger.png",
+      "sha256": "e5493d812455ed268829b0ac22450b54a5552e826617a92d4491247fd142926e",
+      "mtimeUtc": "2026-11-05T02:59:27.303458+00:00",
+      "bytes": 100639,
+      "width": 1440,
+      "height": 900,
+      "url": "http://127.0.0.1:5173",
+      "provenance": "Existing installed Chrome headless, dedicated task profile, CDP device metrics1440x900 and Page.captureScreenshot; actual UI, unedited PNG"
+    },
+    {
+      "path": "notes/ui-redesign/correction2-void-dialog.png",
+      "sha256": "fc15775137e3ad1e173ebf7fbaa1ee2e2492fde10d41c657888955bb07ab37db",
+      "mtimeUtc": "2026-11-05T02:59:27.554972+00:00",
+      "bytes": 110577,
+      "width": 1440,
+      "height": 900,
+      "url": "http://127.0.0.1:5173",
+      "provenance": "Existing installed Chrome headless, dedicated task profile, CDP device metrics1440x900 and Page.captureScreenshot; actual UI, unedited PNG"
+    },
+    {
+      "path": "notes/ui-redesign/correction2-void-outcome.png",
+      "sha256": "2c0bddd1a9666e310fa79f34bbf4b456ecebe768289138566b33c639bf8b91a5",
+      "mtimeUtc": "2026-11-05T02:59:27.781401+00:00",
+      "bytes": 108297,
+      "width": 1440,
+      "height": 900,
+      "url": "http://127.0.0.1:5173",
+      "provenance": "Existing installed Chrome headless, dedicated task profile, CDP device metrics1440x900 and Page.captureScreenshot; actual UI, unedited PNG"
+    },
+    {
+      "path": "notes/ui-redesign/correction2-audit-refund-outcomes.png",
+      "sha256": "2314b56dc0d051849417c88214ef9d8766f24859edef8211d33f8bfce810cd4b",
+      "mtimeUtc": "2026-11-05T02:59:28.297696+00:00",
+      "bytes": 94264,
+      "width": 1440,
+      "height": 900,
+      "url": "http://127.0.0.1:5173",
+      "provenance": "Existing installed Chrome headless, dedicated task profile, CDP device metrics1440x900 and Page.captureScreenshot; actual UI, unedited PNG"
+    }
+  ],
+  "priorChecks": "Correction1 web21/native9 attributed to that prior run; not rerun in correction2"
+}

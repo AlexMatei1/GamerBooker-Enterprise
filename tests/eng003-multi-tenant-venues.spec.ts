@@ -3,6 +3,7 @@
  * admin onboarding, and T-018 row ownership tests.
  */
 import { startTestApp, type TestApp } from './support/auth-harness';
+import { base32Decode, hotp, timeStepAt } from '../src/auth/totp';
 
 interface Fixture {
   userId: string;
@@ -33,13 +34,16 @@ async function createTenantAndVenue(
     'INSERT INTO venue_memberships (user_id, venue_id, tenant_id, role, active) VALUES ($1, $2, $3, $4, true)',
     [user.userId, venueId, tenantId, role],
   );
-  if (['OWNER', 'VENUE_MANAGER', 'PLATFORM_ADMIN'].includes(role)) {
-    await app.db.query(
-      'INSERT INTO user_mfa_factors (user_id, type, secret_encrypted, confirmed_at)' +
-        " VALUES ($1, 'totp', pgp_sym_encrypt('JBSWY3DPEHPK3PXP', 'test-mfa-key-0123456789abcdef0123456789'), now())" +
-        ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
-      [user.userId],
-    );
+  if (['OWNER', 'VENUE_MANAGER'].includes(role)) {
+    // Enrolment alone is no longer proof for this session. Complete real TOTP.
+    const enrolled = await app.call('POST','/v1/auth/mfa/enroll',{headers:{cookie:user.cookie}});
+    expect(enrolled.status).toBe(200);
+    const secret = (enrolled.json as {secret:string}).secret;
+    const verified = await app.call('POST','/v1/auth/mfa/verify',{
+      headers:{cookie:user.cookie}, body:{code:hotp(base32Decode(secret),timeStepAt(Date.now()))},
+    });
+    expect(verified.status).toBe(200);
+    user.cookie = app.cookieOf(verified);
   }
   return { ...user, tenantId, venueId };
 }
@@ -50,7 +54,7 @@ describe('ENG-003 Multi-Tenant Venues & Row Ownership (T-018)', () => {
   let tenantB: Fixture;
 
   beforeAll(async () => {
-    app = await startTestApp('eng003');
+    app = await startTestApp('eng003', { browserClient: true });
     tenantA = await createTenantAndVenue(app, 'CyberArena SRL', 'CyberArena Bucharest', 'OWNER');
     tenantB = await createTenantAndVenue(app, 'PixelHub SRL', 'PixelHub Cluj', 'OWNER');
   }, 60000);
@@ -308,20 +312,21 @@ describe('ENG-003 Multi-Tenant Venues & Row Ownership (T-018)', () => {
       expect(foundA).toBeUndefined();
     });
 
-    it('includes venue in public listing once PUBLISHED', async () => {
-      // Owner publishes the venue
+    it('refuses publishing through the generic profile and keeps the DRAFT venue private', async () => {
       const pubRes = await app.call('PATCH', `/v1/dashboard/venues/${tenantA.venueId}`, {
         headers: { cookie: tenantA.cookie },
         body: { publication_state: 'PUBLISHED' },
       });
-      expect(pubRes.status).toBe(200);
+      expect(pubRes.status).toBe(400);
+      expect(app.errorOf(pubRes).code).toBe('VALIDATION_FAILED');
 
       const res = await app.call('GET', '/v1/venues');
       expect(res.status).toBe(200);
       const venues = (res.json as { venues: Array<{ id: string; name: string }> }).venues;
       const foundA = venues.find((v) => v.id === tenantA.venueId);
-      expect(foundA).toBeDefined();
-      expect(foundA?.name).toBe('CyberArena Bucharest');
+      expect(foundA).toBeUndefined();
+      const venue = await app.db.query('SELECT publication_state FROM venues WHERE id=$1',[tenantA.venueId]);
+      expect(venue.rows[0].publication_state).toBe('DRAFT');
     });
   });
 });

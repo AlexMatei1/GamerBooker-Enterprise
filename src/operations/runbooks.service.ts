@@ -18,6 +18,43 @@ import {
   GoNoGoGateResult,
 } from './runbooks.types';
 
+/** Payment intent row inspected by the orphan-payment runbook. */
+interface OrphanIntentRow {
+  id: string;
+  provider_ref: string;
+  amount_minor: string;
+  status: string;
+  booking_id: string | null;
+  group_booking_id: string | null;
+  venue_id: string;
+  tenant_id: string;
+  metadata: { customer_id?: string } | null;
+}
+
+/** Minimal layout draft row used for publish diagnostics. */
+interface LayoutDraftRow {
+  revision?: string | number | null;
+}
+
+/** Product row toggled by the out-of-stock runbook. */
+interface ProductRow {
+  id: string;
+  title: string;
+  active: boolean;
+}
+
+/** Staff certification row joined with the staff email. */
+interface StaffCertificationRow {
+  id: string;
+  user_id: string;
+  user_email: string;
+  tenant_id: string;
+  venue_id: string;
+  module_id: string;
+  certified_at: Date | string;
+  score: number | string;
+}
+
 @Injectable()
 export class RunbooksService {
   constructor(private readonly refundsService?: RefundsService) {}
@@ -112,17 +149,7 @@ export class RunbooksService {
     staffUserId?: string,
   ): Promise<RunbookR2OrphanPaymentResult> {
     const pool = getPool();
-    const piRes = await pool.query<{
-      id: string;
-      provider_ref: string;
-      amount_minor: string;
-      status: string;
-      booking_id: string | null;
-      group_booking_id: string | null;
-      venue_id: string;
-      tenant_id: string;
-      metadata: any;
-    }>(
+    const piRes = await pool.query<OrphanIntentRow>(
       'SELECT id, provider_ref, amount_minor, status, booking_id, group_booking_id, venue_id, tenant_id, metadata FROM payment_intents WHERE provider_ref = $1',
       [input.provider_ref],
     );
@@ -319,7 +346,7 @@ export class RunbooksService {
       blocking.push('NO_ACTIVE_BOOKABLE_RESOURCES');
     }
 
-    const draftRes = await pool.query<any>(
+    const draftRes = await pool.query<LayoutDraftRow>(
       'SELECT * FROM layout_drafts WHERE venue_id = $1',
       [venueId],
     );
@@ -410,7 +437,7 @@ export class RunbooksService {
     input: RunbookR6OutOfStockInput,
   ): Promise<RunbookR6OutOfStockResult> {
     const pool = getPool();
-    const pRes = await pool.query<any>(
+    const pRes = await pool.query<ProductRow>(
       'SELECT id, title, active FROM products WHERE id = $1 AND venue_id = $2',
       [input.product_id, input.venue_id],
     );
@@ -577,7 +604,7 @@ export class RunbooksService {
       [venueId],
     );
 
-    const certsRes = await pool.query<any>(
+    const certsRes = await pool.query<StaffCertificationRow>(
       `SELECT sc.*, u.email as user_email
          FROM staff_certifications sc
          JOIN users u ON u.id = sc.user_id
@@ -641,7 +668,7 @@ export class RunbooksService {
         user_email: c.user_email,
         module_id: c.module_id,
         certified_at: new Date(c.certified_at).toISOString(),
-        score: c.score,
+        score: typeof c.score === 'string' ? Number(c.score) : c.score,
       })),
       missing_certifications: missing,
     };

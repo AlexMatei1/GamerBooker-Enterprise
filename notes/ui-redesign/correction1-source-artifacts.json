@@ -1,0 +1,127 @@
+{
+  "recordedUtc": "2026-11-05T02:47:23.011146+00:00",
+  "requestedModel": "gpt-6.1-sol",
+  "clientIdentity": "not independently authenticated",
+  "records": [
+    {
+      "path": "apps/mobile-app/src/App.tsx",
+      "sha256": "c2d5fd3b45a8e489bbd387490ef4b2cf0cdc264a4dc5b40a983ef8948f9d6d9d",
+      "mtimeUtc": "2026-11-05T02:42:55.246445+00:00",
+      "bytes": 10486
+    },
+    {
+      "path": "apps/mobile-app/src/api/client.ts",
+      "sha256": "1ed2fcb1d3fea721a5a260bf6a123e363582d50464cea28bf94b2d6f0f6ae1d5",
+      "mtimeUtc": "2026-11-05T02:38:24.769507+00:00",
+      "bytes": 8352
+    },
+    {
+      "path": "apps/mobile-app/src/types/mobile.ts",
+      "sha256": "d15c2b3df609f7a3a4025ffbb97e0cc32bfc6a358bbd3d5842b44536e4272fc1",
+      "mtimeUtc": "2026-11-05T02:38:24.782023+00:00",
+      "bytes": 2317
+    },
+    {
+      "path": "apps/mobile-app/src/utils/demoTime.ts",
+      "sha256": "00c3a6d1d6261b6f3289be980000fcfb3ca804add7e6c97e076cf8f358bdb587",
+      "mtimeUtc": "2026-11-05T02:38:24.793070+00:00",
+      "bytes": 818
+    },
+    {
+      "path": "apps/mobile-app/src/components/SeatPicker.tsx",
+      "sha256": "4507f955710f715d4ac1207f2b63e3f4a3ef3e7b120bdbc82081f83b2cb7d05b",
+      "mtimeUtc": "2026-11-05T02:38:24.870385+00:00",
+      "bytes": 5523
+    },
+    {
+      "path": "apps/mobile-app/src/components/BookingCheckout.tsx",
+      "sha256": "2d7fe51788f3a7172190681095fc55d284a0932705c73bdece047c16fad3caa3",
+      "mtimeUtc": "2026-11-05T02:38:24.815484+00:00",
+      "bytes": 6059
+    },
+    {
+      "path": "apps/mobile-app/src/components/ActivePassView.tsx",
+      "sha256": "21122ed6c347221883b6e2c2ea03b3fd022b1d902e928d57418fe0cec023b3c3",
+      "mtimeUtc": "2026-11-05T02:38:24.827998+00:00",
+      "bytes": 3485
+    },
+    {
+      "path": "apps/mobile-app/src/components/BarOrderingView.tsx",
+      "sha256": "7ac27e8cc06c3ffcd5bffa2fb750be215dae3ab811ccb767de82f4a1b0edafd9",
+      "mtimeUtc": "2026-11-05T02:38:24.853177+00:00",
+      "bytes": 7323
+    },
+    {
+      "path": "apps/mobile-app/src/services/realtime.ts",
+      "sha256": "3e19274a177c6bfa881817088fbf4f9de98b6890608116fabbc993c738f988e3",
+      "mtimeUtc": "2026-11-05T02:39:42.193009+00:00",
+      "bytes": 4835
+    },
+    {
+      "path": "apps/venue-dashboard/src/api/client.ts",
+      "sha256": "ea7100fbd5233bead3d18edc01845f6a87afb0539baefd6470e922479bc2940e",
+      "mtimeUtc": "2026-11-05T02:42:55.453358+00:00",
+      "bytes": 15495
+    },
+    {
+      "path": "apps/venue-dashboard/src/services/realtime.ts",
+      "sha256": "1baa5d5fdbafc056fabc75eaaca8b6dae5c4a6b98d190a83023249a6b4a198b3",
+      "mtimeUtc": "2026-11-05T02:39:42.341292+00:00",
+      "bytes": 5257
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/LiveFloorView.tsx",
+      "sha256": "ef6af8a9ff0301d608eededf8df3a9be7b9b47f54650a669f71db315a073c8df",
+      "mtimeUtc": "2026-11-05T02:38:25.002961+00:00",
+      "bytes": 17372
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/BarBoard.tsx",
+      "sha256": "97b9ba2bc60bba54a631426b9d933f4b225d4ede0643c5a9e9a9a5823c346c07",
+      "mtimeUtc": "2026-11-05T02:42:55.413734+00:00",
+      "bytes": 19267
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/FinancialLedger.tsx",
+      "sha256": "dbcdf3674b30f4172b01c295879ff6de80baa4bcb71863e82ded9ba9725599dd",
+      "mtimeUtc": "2026-11-05T02:38:24.966545+00:00",
+      "bytes": 17286
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/OperationsRunbooks.tsx",
+      "sha256": "74f5384401df2b432d9b9c00da07ecb42e1e98c6b870240fbbe3b76ac1e6d667",
+      "mtimeUtc": "2026-11-05T02:42:55.366627+00:00",
+      "bytes": 8991
+    },
+    {
+      "path": "apps/venue-dashboard/src/components/StationClientShell.tsx",
+      "sha256": "cca8d0773eafb0d227a06a941c277cb5c73103fcece32828cde7a7fafdba50d4",
+      "mtimeUtc": "2026-11-05T02:38:25.044682+00:00",
+      "bytes": 16042
+    },
+    {
+      "path": "apps/flutter-mobile/lib/parity_app.dart",
+      "sha256": "b5cd6925a16717e58a6edc3bc0d092e61f288e0ac0449836a4d5295eeb594166",
+      "mtimeUtc": "2026-11-05T02:38:25.562681+00:00",
+      "bytes": 74453
+    },
+    {
+      "path": "apps/mobile-app/dist/index.html",
+      "sha256": "c50e5a30490935454f8c78222b652ad6fcaf47a4164b5e577b6cd29c43aa578e",
+      "mtimeUtc": "2026-11-05T02:43:46.006054+00:00",
+      "bytes": 496
+    },
+    {
+      "path": "apps/venue-dashboard/dist/index.html",
+      "sha256": "e35198255e5093aba736b6ecd8b4adc0e6c035becf23598afb7b45b414c209b2",
+      "mtimeUtc": "2026-11-05T02:43:45.299847+00:00",
+      "bytes": 504
+    },
+    {
+      "path": "apps/flutter-mobile/build/app/outputs/flutter-apk/app-debug.apk",
+      "sha256": "7579e995973f0c822f3e3c90019752b7c0672252336264c1132cda24609884cf",
+      "mtimeUtc": "2026-11-05T02:44:23.176404+00:00",
+      "bytes": 165423973
+    }
+  ]
+}

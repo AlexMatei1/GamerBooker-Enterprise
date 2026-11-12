@@ -16,6 +16,7 @@ import type { Request, Response } from 'express';
 import type { SessionPrincipal } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
 import { GroupService } from './group.service';
+import { PaymentsService } from '../payments/payments.service';
 import type { CreateGroupBookingDto, AdjustSharesDto } from './group.types';
 
 interface AuthedRequest extends Request {
@@ -24,7 +25,10 @@ interface AuthedRequest extends Request {
 
 @Controller('group-bookings')
 export class GroupController {
-  constructor(private readonly groupService: GroupService) {}
+  constructor(
+    private readonly groupService: GroupService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -197,9 +201,10 @@ export class GroupController {
 
   @Post('payments/capture')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
   async capturePayment(
     @Body() body: { provider_ref: string },
-    @Req() req: Request,
+    @Req() req: AuthedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
     res.setHeader('Cache-Control', 'no-store');
@@ -209,6 +214,20 @@ export class GroupController {
         message: 'Must provide provider_ref',
       });
     }
+    const principal = req.auth as SessionPrincipal;
+    if (!principal?.userId) {
+      throw new BadRequestException({
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication is required.',
+      });
+    }
+    // Sandbox-only shim: the PSP must report the capture and the caller must own
+    // the intent claimed by the group booking. A real PSP capture reaches the
+    // group through the signed webhook, never through a client request.
+    await this.paymentsService.assertProviderCaptured(
+      body.provider_ref,
+      principal.userId,
+    );
     const requestId = (req.headers['x-request-id'] as string) || '';
     const result = await this.groupService.handlePaymentCaptured(body.provider_ref, requestId);
     return { result };

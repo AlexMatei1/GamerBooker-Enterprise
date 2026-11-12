@@ -50,7 +50,7 @@ export class AccessibilityService {
       name: string;
       status: string;
       bookable: boolean;
-      attributes?: any;
+      attributes?: Record<string, unknown> | null;
     }>(
       `SELECT id, room_id, zone_id, type, name, status, bookable, attributes
          FROM resources

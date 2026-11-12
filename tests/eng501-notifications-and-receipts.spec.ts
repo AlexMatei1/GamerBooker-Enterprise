@@ -36,6 +36,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -49,6 +50,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -76,7 +78,7 @@ describe('ENG-501 Notifications, Templates, Receipts, and Order Status Flows', (
   let sharedBookingId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng501');
+    app = await startTestApp('eng501', { browserClient: true });
     templatesService = new TemplatesService();
     fixtures = await createVenueWithRoles(app, 'Nexus Gaming SRL', 'Nexus Flagship Bucharest');
     customerUser = await app.verifiedUser();
@@ -133,9 +135,15 @@ describe('ENG-501 Notifications, Templates, Receipts, and Order Status Flows', (
     expect(holdRes.status).toBe(201);
     const hold = holdRes.json as any;
 
+    // Reference bookings are created with a settled upfront charge so the
+    // receipt/notification expectations below describe money really taken.
+    const upfrontIntentId = await app.settleHoldPayment(hold.id);
     const confirmRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: customerUser.cookie },
-      body: { hold_id: hold.id },
+      body: {
+        hold_id: hold.id,
+        ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+      },
     });
     expect(confirmRes.status).toBe(201);
     const confirmed = confirmRes.json as any;
@@ -337,12 +345,10 @@ describe('ENG-501 Notifications, Templates, Receipts, and Order Status Flows', (
 
   describe('Customer Booking Receipt View', () => {
     beforeAll(async () => {
-      // Simulate online deposit payment intent (3000 bani)
-      await app.db.query(
-        `INSERT INTO payment_intents (id, tenant_id, venue_id, booking_id, provider, provider_ref, amount_minor, currency, status, idempotency_key)
-         VALUES (gen_random_uuid(), $1, $2, $3, 'STRIPE', $4, 3000, 'RON', 'CAPTURED', $5)`,
-        [fixtures.tenantId, fixtures.venueId, sharedBookingId, `pi_test_${Date.now()}`, `idemp-pay-${Date.now()}`],
-      );
+      // The online deposit capture (3000 bani) already exists: the suite
+      // beforeAll settled the hold through app.settleHoldPayment, exactly as
+      // the PSP webhook would, and confirmBooking linked that captured intent
+      // to sharedBookingId. A second intent here would double-count the money.
 
       // Simulate offline cash reception balance payment (3000 bani)
       await app.db.query(

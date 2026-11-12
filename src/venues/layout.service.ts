@@ -27,6 +27,27 @@ function conflict(code: string, message: string, details?: Record<string, unknow
   return new AuthHttpError(HttpStatus.CONFLICT, code, message, details);
 }
 
+/** Raw `layout_drafts` row as returned by node-postgres. */
+interface LayoutDraftRow {
+  id: string;
+  venue_id: string;
+  revision: string | number;
+  schema_version: string | number;
+  canvas: unknown;
+  rooms: unknown;
+  layers: unknown;
+  nodes: unknown;
+  metadata: unknown;
+  created_at: Date | string;
+  updated_at: Date | string;
+  updated_by: string | null;
+}
+
+/** Decodes a JSONB column that may arrive parsed or as a string. */
+function decodeJson<T>(value: unknown): T {
+  return (typeof value === 'string' ? JSON.parse(value) : value) as T;
+}
+
 @Injectable()
 export class LayoutService {
   private readonly defaultLayers: SceneLayer[] = [
@@ -39,7 +60,7 @@ export class LayoutService {
 
   async getDraft(venueId: string): Promise<LayoutDraft> {
     const pool = getPool();
-    const existing = await pool.query<any>(
+    const existing = await pool.query<LayoutDraftRow>(
       `SELECT ld.*
        FROM layout_drafts ld
        WHERE ld.venue_id = $1`,
@@ -75,7 +96,7 @@ export class LayoutService {
       }
       const tenantId = venueRes.rows[0].tenant_id;
 
-      const existingRes = await client.query<any>(
+      const existingRes = await client.query<LayoutDraftRow>(
         `SELECT ld.*
          FROM layout_drafts ld
          WHERE ld.venue_id = $1
@@ -115,7 +136,7 @@ export class LayoutService {
       const newMetadata = dto.metadata ?? currentDraft.metadata;
       const nextRevision = currentDraft.revision + 1;
 
-      const updatedRes = await client.query<any>(
+      const updatedRes = await client.query<LayoutDraftRow>(
         `UPDATE layout_drafts
          SET revision = $1,
              canvas = $2,
@@ -717,7 +738,7 @@ export class LayoutService {
     }
   }
 
-  private validateSceneData(dto: UpdateDraftDto, currentCanvas: SceneCanvas): void {
+  private validateSceneData(dto: UpdateDraftDto, _currentCanvas: SceneCanvas): void {
     if (dto.canvas) {
       if (typeof dto.canvas.width === 'number' && dto.canvas.width < 200) {
         throw badRequest('INVALID_CANVAS_WIDTH', 'Canvas width must be at least 200 units');
@@ -869,7 +890,7 @@ export class LayoutService {
 
     const initialCanvas: SceneCanvas = { width: 1600, height: 1000, grid: 20 };
 
-    const insertRes = await client.query<any>(
+    const insertRes = await client.query<LayoutDraftRow>(
       `INSERT INTO layout_drafts (
         venue_id, revision, schema_version, canvas, rooms, layers, nodes, updated_by
       ) VALUES ($1, 1, 1, $2, $3, $4, $5, $6)
@@ -887,17 +908,17 @@ export class LayoutService {
     return this.mapDraftRow(insertRes.rows[0]);
   }
 
-  private mapDraftRow(row: any): LayoutDraft {
+  private mapDraftRow(row: LayoutDraftRow): LayoutDraft {
     return {
       id: row.id,
       venue_id: row.venue_id,
       revision: Number(row.revision),
       schema_version: Number(row.schema_version),
-      canvas: typeof row.canvas === 'string' ? JSON.parse(row.canvas) : row.canvas,
-      rooms: typeof row.rooms === 'string' ? JSON.parse(row.rooms) : row.rooms,
-      layers: typeof row.layers === 'string' ? JSON.parse(row.layers) : row.layers,
-      nodes: typeof row.nodes === 'string' ? JSON.parse(row.nodes) : row.nodes,
-      metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
+      canvas: decodeJson<SceneCanvas>(row.canvas),
+      rooms: decodeJson<SceneRoom[]>(row.rooms),
+      layers: decodeJson<SceneLayer[]>(row.layers),
+      nodes: decodeJson<SceneNode[]>(row.nodes),
+      metadata: decodeJson<Record<string, unknown>>(row.metadata),
       created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       updated_by: row.updated_by || null,

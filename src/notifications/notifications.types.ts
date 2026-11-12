@@ -20,7 +20,7 @@ export interface NotificationItem {
   title: string;
   body: string;
   channel: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   read: boolean;
   read_at?: string | null;
   created_at: string;
@@ -48,7 +48,7 @@ export interface DispatchNotificationInput {
   eventType: NotificationEventType;
   templateKey?: string;
   channel?: NotificationChannel;
-  context: Record<string, any>;
+  context: Record<string, unknown>;
   isMarketing?: boolean;
   tenantId?: string | null;
 }

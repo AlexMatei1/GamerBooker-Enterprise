@@ -143,7 +143,7 @@ export class ComplianceService {
       tenant_id: string;
       name: string;
       publication_state: string;
-      address: any;
+      address: Record<string, unknown> | null;
       legal_name: string;
     }>(
       `SELECT v.id, v.tenant_id, v.name, v.publication_state, v.address, t.legal_name

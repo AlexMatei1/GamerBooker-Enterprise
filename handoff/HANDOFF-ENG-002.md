@@ -1,6 +1,6 @@
 # HANDOFF - ENG-002 Auth: verified identity, staff MFA, sessions, RBAC
 
-Status: proposed, awaiting human decisions D1-D5 before implementation starts.
+Historical status: proposed, awaiting human decisions d1-d5 before implementation starts. See the [2026-11-04 status inventory](HANDOFF-INDEX-2026-11-04.md) for the later assessment.
 Author: thinker (contract), recorded by the primary agent.
 Task source: docs/11-delivery/04-engineering-handoff-backlog.md:8 (ENG-002),
 critical path line 54. M0 requires auth plus tenant/venue model

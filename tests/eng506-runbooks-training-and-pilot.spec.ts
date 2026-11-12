@@ -38,6 +38,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [ownerUser.userId],
   );
+  ownerUser.cookie = await app.elevateMfa(ownerUser.cookie);
 
   // Manager
   const managerUser = await app.verifiedUser();
@@ -51,6 +52,7 @@ async function createVenueWithRoles(
       ' ON CONFLICT (user_id, type) DO UPDATE SET confirmed_at = now()',
     [managerUser.userId],
   );
+  managerUser.cookie = await app.elevateMfa(managerUser.cookie);
 
   // Reception
   const recUser = await app.verifiedUser();
@@ -77,7 +79,7 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
   let productId: string;
 
   beforeAll(async () => {
-    app = await startTestApp('eng506');
+    app = await startTestApp('eng506', { browserClient: true });
     venue = await createVenueWithRoles(app, 'Cyber Ops SRL', 'Cyber Arena Bucharest');
     const cust = await app.verifiedUser();
     customer = { ...cust, tenantId: venue.tenantId, venueId: venue.venueId };
@@ -127,9 +129,15 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       headers: { cookie: customer.cookie },
       body: { quote_id: (qRes.json as any)?.quote_id },
     });
+    // The confirm guard requires server-side proof of the upfront charge;
+    // settle the hold the way the PSP webhook would.
+    const upfrontIntentId = await app.settleHoldPayment((hRes.json as any)?.id);
     const cRes = await app.call('POST', '/v1/bookings/confirm', {
       headers: { cookie: customer.cookie },
-      body: { hold_id: (hRes.json as any)?.id },
+      body: {
+        hold_id: (hRes.json as any)?.id,
+        ...(upfrontIntentId ? { payment_intent_id: upfrontIntentId } : {}),
+      },
     });
     bookingId = (cRes.json as any)?.booking?.id || (cRes.json as any)?.id;
 
@@ -171,15 +179,11 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       );
 
 
-      expect(res.status).toBe(200);
-      const audit = res.json as any;
-
-      expect(audit.resource_id).toBe(pcId);
-      expect(audit.overlaps_found).toBe(0);
-      expect(audit.allegation_verified).toBe(false);
-      expect(audit.physical_squatting_suspected).toBe(true);
-      expect(audit.remediation_guidance).toContain('zero overlapping allocations');
-      expect(audit.active_claims.length).toBe(1);
+      // R1 is one of the legacy runbooks that HANDOFF-CAFE-ACCESS-2026-11-05.md
+      // line 29 closed on purpose (no tenant-safe contract). An authenticated
+      // manager must still get fail-closed 404, never the old unfiltered audit.
+      expect(res.status).toBe(404);
+      expect(app.errorOf(res).code).toBe('RESOURCE_NOT_FOUND');
     });
 
     it('R2: resolves orphan PSP payment by dispatching an automated compensating refund', async () => {
@@ -203,13 +207,19 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       });
 
 
-      expect(res.status).toBe(200);
-      const data = res.json as any;
+      // R2 is one of the deliberately closed legacy runbooks
+      // (HANDOFF-CAFE-ACCESS-2026-11-05.md line 29). Closing the route must not
+      // quietly refund or re-link money: the orphan intent stays CAPTURED and
+      // unlinked so reconciliation keeps surfacing it.
+      expect(res.status).toBe(404);
+      expect(app.errorOf(res).code).toBe('RESOURCE_NOT_FOUND');
 
-      expect(data.provider_ref).toBe(piRef);
-      expect(data.orphan).toBe(true);
-      expect(data.action_taken).toBe('REFUND_DISPATCHED');
-      expect(data.refund_id).toBeTruthy();
+      const check = await app.db.query<{ status: string; booking_id: string | null }>(
+        'SELECT status, booking_id FROM payment_intents WHERE provider_ref = $1',
+        [piRef],
+      );
+      expect(check.rows[0].status).toBe('CAPTURED');
+      expect(check.rows[0].booking_id).toBeNull();
     });
 
     it('R3: reconciles daily receivables and verifies balanced collections delta', async () => {
@@ -222,13 +232,9 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       );
 
 
-      expect(res.status).toBe(200);
-      const data = res.json as any;
-
-      expect(data.venue_id).toBe(venue.venueId);
-      expect(typeof data.booking_total_minor).toBe('number');
-      expect(typeof data.online_captured_minor).toBe('number');
-      expect(typeof data.unreconciled_delta_minor).toBe('number');
+      // R3 closed (HANDOFF-CAFE-ACCESS-2026-11-05.md line 29): fail-closed 404.
+      expect(res.status).toBe(404);
+      expect(app.errorOf(res).code).toBe('RESOURCE_NOT_FOUND');
     });
 
     it('R4: runs pre-publication diagnostics identifying missing layout draft or configuration gates', async () => {
@@ -239,12 +245,9 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       );
 
 
-      expect(res.status).toBe(200);
-      const diag = res.json as any;
-
-      expect(diag.venue_id).toBe(venue.venueId);
-      expect(typeof diag.publishable).toBe('boolean');
-      expect(diag.equipment_counts.bookable_resources).toBeGreaterThanOrEqual(1);
+      // R4 closed (HANDOFF-CAFE-ACCESS-2026-11-05.md line 29): fail-closed 404.
+      expect(res.status).toBe(404);
+      expect(app.errorOf(res).code).toBe('RESOURCE_NOT_FOUND');
     });
 
     it('R5: surfaces offline check-in contingency protocol and strict app-only rules', async () => {
@@ -287,21 +290,17 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
         },
       });
 
-      expect(r6Res.status).toBe(200);
-      const result = r6Res.json as any;
+      // R6 mutation closed (HANDOFF-CAFE-ACCESS-2026-11-05.md line 29).
+      expect(r6Res.status).toBe(404);
+      expect(app.errorOf(r6Res).code).toBe('RESOURCE_NOT_FOUND');
 
-      expect(result.product_id).toBe(productId);
-      expect(result.active_after).toBe(false);
-      expect(result.affected_orders_count).toBeGreaterThanOrEqual(1);
-      expect(result.cancelled_items_count).toBeGreaterThanOrEqual(1);
-      expect(result.total_refunded_minor).toBeGreaterThanOrEqual(2000);
-
-      // Verify SKU is inactive in catalog
+      // A closed emergency action must not pretend to have run: the SKU stays
+      // sellable and no refund is fabricated.
       const pCheck = await app.db.query<{ active: boolean }>(
         'SELECT active FROM products WHERE id = $1',
         [productId],
       );
-      expect(pCheck.rows[0].active).toBe(false);
+      expect(pCheck.rows[0].active).toBe(true);
     });
   });
 
@@ -324,7 +323,24 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
     });
 
     it('records staff certifications and evaluates venue training readiness', async () => {
-      // Check initial readiness before certifications
+      // The certification write route is one of the legacy routes closed by
+      // HANDOFF-CAFE-ACCESS-2026-11-05.md line 29 (it trusted caller-supplied
+      // tenant_id/venue_id/user_id). Pin the closure first...
+      const closedWrite = await app.call('POST', '/v1/training/certifications', {
+        headers: { cookie: venue.owner.cookie },
+        body: {
+          tenant_id: venue.tenantId,
+          venue_id: venue.venueId,
+          user_id: venue.owner.userId,
+          module_id: 'OWNER_GOVERNANCE',
+          score: 100,
+        },
+      });
+      expect(closedWrite.status).toBe(404);
+      expect(app.errorOf(closedWrite).code).toBe('RESOURCE_NOT_FOUND');
+
+      // ...then verify the read-only readiness computation itself is correct,
+      // seeding records the way an authorised back-office write would.
       const initialRes = await app.call(
         'GET',
         `/v1/training/venues/${venue.venueId}/staff-readiness`,
@@ -335,41 +351,18 @@ describe('ENG-506 Incident Runbooks, Partner Training, and Pilot Metrics', () =>
       expect(initial.ready_for_launch).toBe(false);
       expect(initial.missing_certifications.length).toBeGreaterThanOrEqual(1);
 
-      // Certify owner
-      await app.call('POST', '/v1/training/certifications', {
-        headers: { cookie: venue.owner.cookie },
-        body: {
-          tenant_id: venue.tenantId,
-          venue_id: venue.venueId,
-          user_id: venue.owner.userId,
-          module_id: 'OWNER_GOVERNANCE',
-          score: 100,
-        },
-      });
-
-      // Certify manager
-      await app.call('POST', '/v1/training/certifications', {
-        headers: { cookie: venue.owner.cookie },
-        body: {
-          tenant_id: venue.tenantId,
-          venue_id: venue.venueId,
-          user_id: venue.manager.userId,
-          module_id: 'MANAGER_OPERATIONS',
-          score: 100,
-        },
-      });
-
-      // Certify reception
-      await app.call('POST', '/v1/training/certifications', {
-        headers: { cookie: venue.manager.cookie },
-        body: {
-          tenant_id: venue.tenantId,
-          venue_id: venue.venueId,
-          user_id: venue.reception.userId,
-          module_id: 'RECEPTION_ZERO_STAFF_BOOKING',
-          score: 100,
-        },
-      });
+      const seed = async (userId: string, moduleId: string) => {
+        await app.db.query(
+          `INSERT INTO staff_certifications (
+             tenant_id, venue_id, user_id, module_id, certified_by, score
+           ) VALUES ($1, $2, $3, $4, $5, 100)
+           ON CONFLICT (user_id, venue_id, module_id) DO UPDATE SET score = 100`,
+          [venue.tenantId, venue.venueId, userId, moduleId, venue.owner.userId],
+        );
+      };
+      await seed(venue.owner.userId, 'OWNER_GOVERNANCE');
+      await seed(venue.manager.userId, 'MANAGER_OPERATIONS');
+      await seed(venue.reception.userId, 'RECEPTION_ZERO_STAFF_BOOKING');
 
       // Check final readiness after certifying all staff
       const finalRes = await app.call(

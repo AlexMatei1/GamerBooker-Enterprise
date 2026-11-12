@@ -44,7 +44,7 @@ export interface ResourceInspectorDetail {
   bookable: boolean;
   room: { id: string | null; name: string | null };
   zone: { id: string | null; name: string | null };
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
   pricing: ResourcePricingSummary;
   policy: ResourcePolicySummary;
   components: {
@@ -61,7 +61,7 @@ export interface UpdateInspectorDto {
   zone_id?: string | null;
   status?: string;
   bookable?: boolean;
-  attributes?: Record<string, any>;
+  attributes?: Record<string, unknown>;
 }
 
 export interface AdjacencyEdgeItem {

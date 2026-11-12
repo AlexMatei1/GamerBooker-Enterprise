@@ -29,16 +29,57 @@ export interface RollbackLayoutDto {
   reason: string;
 }
 
+export interface LayoutCanvas {
+  width?: number;
+  height?: number;
+  [key: string]: unknown;
+}
+
+export interface LayoutRoomShape {
+  x?: number;
+  y?: number;
+  [key: string]: unknown;
+}
+
+export interface LayoutRoom {
+  id?: string;
+  name?: string;
+  shape?: LayoutRoomShape;
+  [key: string]: unknown;
+}
+
+export interface LayoutLayer {
+  id?: string;
+  [key: string]: unknown;
+}
+
+export interface LayoutNode {
+  id?: string;
+  kind?: string;
+  layer_id?: string;
+  room_id?: string;
+  resource_id?: string;
+  label?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  rotation?: number;
+  color?: string;
+  custom_props?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface LayoutRevisionDetail {
   id: string;
   venue_id: string;
   revision_number: number;
   schema_version: number;
-  canvas: any;
-  rooms: any[];
-  layers: any[];
-  nodes: any[];
-  metadata: Record<string, any>;
+  canvas: LayoutCanvas;
+  rooms: LayoutRoom[];
+  layers: LayoutLayer[];
+  nodes: LayoutNode[];
+  metadata: Record<string, unknown>;
   published_at: string;
   published_by: string | null;
   change_summary: string | null;
@@ -57,7 +98,7 @@ export interface CustomerPreviewNode {
   rotation?: number;
   label?: string;
   color?: string;
-  custom_props?: Record<string, any>;
+  custom_props?: Record<string, unknown>;
   resource?: {
     id: string;
     name: string;
@@ -72,10 +113,10 @@ export interface CustomerLayoutPreview {
   venue_id: string;
   source: 'DRAFT' | 'PUBLISHED';
   revision_number: number;
-  canvas: any;
-  rooms: any[];
-  layers: any[];
-  nodes: CustomerPreviewNode[];
+  canvas: LayoutCanvas;
+  rooms: LayoutRoom[];
+  layers: LayoutLayer[];
+  nodes: Array<CustomerPreviewNode | Record<string, unknown>>;
   interval?: { from: string; to: string };
   summary: {
     total_resources: number;

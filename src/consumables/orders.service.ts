@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, OnModuleInit } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
 import { getPool } from '../db/pool';
 import { AuthHttpError } from '../auth/auth-error';
@@ -36,11 +36,40 @@ function generateCrockfordCode(prefix: string, length: number = 6): string {
 }
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly refundsService?: RefundsService,
   ) {}
+
+  /**
+   * Orders created through `orders/checkout` leave the `payment_intents` row in
+   * PENDING and the order in PAYMENT_PENDING. The webhook path
+   * (`PaymentsService.processWebhook`) is the only place a real PSP capture is
+   * confirmed, so the order must be settled from there as well. Without this
+   * registration the sandbox capture shim in `OrdersController` would be the
+   * sole route out of PAYMENT_PENDING, which is exactly the client-supplied
+   * payment proof this codebase must not accept.
+   */
+  onModuleInit() {
+    this.paymentsService.onPaymentCaptured(async (intent) => {
+      if (!this.isOrderIntent(intent)) {
+        return;
+      }
+      await this.handleOrderPaymentCaptured(intent.provider_ref);
+    });
+  }
+
+  /**
+   * Consumables order intents are the ones that carry `metadata.order_id`;
+   * booking balance and group intents carry a `booking_id` instead. Keeping the
+   * discriminator on `order_id` stops the booking handlers from double-settling
+   * an order intent and vice versa.
+   */
+  private isOrderIntent(intent: { metadata?: unknown }): boolean {
+    const metadata = (intent.metadata ?? {}) as Record<string, unknown>;
+    return typeof metadata.order_id === 'string' && metadata.order_id.length > 0;
+  }
 
   // ---------------------------------------------------------------------------
   // Cart & Order Eligibility Validation

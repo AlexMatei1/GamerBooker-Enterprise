@@ -65,7 +65,7 @@ async function sessionOf(userId: string): Promise<SessionRow> {
 }
 
 beforeAll(async () => {
-  app = await startTestApp('hardening');
+  app = await startTestApp('hardening', { browserClient: true });
   db = app.db;
 }, 120000);
 

@@ -11,6 +11,36 @@ import type {
   RefundListResult,
 } from './refunds.types';
 
+/** Row shape of `refunds`, optionally joined with the customer email. */
+interface RefundRow {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  booking_id: string | null;
+  payment_intent_id: string | null;
+  customer_id: string;
+  customer_email?: string | null;
+  amount_minor: string | number;
+  currency: string | null;
+  status: RefundStatus;
+  reason: string;
+  provider_ref: string | null;
+  approved_by: string | null;
+  approved_at: string | Date | null;
+  submitted_at: string | Date | null;
+  processed_at: string | Date | null;
+  failure_reason: string | null;
+  retry_count: string | number | null;
+  idempotency_key: string | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
+interface RefundProviderRow {
+  provider_ref: string;
+  provider: string | null;
+}
+
 @Injectable()
 export class RefundsService {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -43,7 +73,7 @@ export class RefundsService {
 
     // Check idempotency if provided
     if (input.idempotency_key) {
-      const existing = await pool.query<any>(
+      const existing = await pool.query<RefundRow>(
         'SELECT r.*, u.email as customer_email FROM refunds r JOIN users u ON u.id = r.customer_id WHERE r.venue_id = $1 AND r.idempotency_key = $2',
         [venueId, input.idempotency_key],
       );
@@ -72,7 +102,7 @@ export class RefundsService {
         }
         pi = piRes.rows[0];
       } else if (input.booking_id) {
-        const queryParams: any[] = [input.booking_id, venueId];
+        const queryParams: unknown[] = [input.booking_id, venueId];
         let customerFilter = '';
         if (input.customer_id) {
           customerFilter = ' AND (group_participant_id IN (SELECT id FROM group_participants WHERE user_id = $3) OR $3 = $3)';
@@ -158,7 +188,8 @@ export class RefundsService {
       }
       if (!customerId) {
         // Fallback to searching user by customer_id if stored in metadata
-        customerId = (pi.metadata as any)?.customer_id;
+        const metaCustomer = pi.metadata.customer_id;
+        customerId = typeof metaCustomer === 'string' ? metaCustomer : undefined;
       }
       if (!customerId) {
         throw new AuthHttpError(
@@ -178,7 +209,7 @@ export class RefundsService {
       const approvedBy = initialStatus === 'APPROVED' ? staffId : null;
       const approvedAt = initialStatus === 'APPROVED' ? new Date() : null;
 
-      const inserted = await client.query<any>(
+      const inserted = await client.query<RefundRow>(
         `INSERT INTO refunds (
            tenant_id, venue_id, booking_id, payment_intent_id, group_booking_id,
            customer_id, amount_minor, currency, status, reason, approved_by,
@@ -273,7 +304,7 @@ export class RefundsService {
     try {
       await client.query('BEGIN');
 
-      const rRes = await client.query<any>(
+      const rRes = await client.query<RefundRow>(
         'SELECT * FROM refunds WHERE id = $1 AND venue_id = $2 FOR UPDATE',
         [refundId, venueId],
       );
@@ -299,14 +330,12 @@ export class RefundsService {
         );
       }
 
-      const updatedRes = await client.query<any>(
+      await client.query(
         `UPDATE refunds
             SET status = 'APPROVED', approved_by = $1, approved_at = now(), updated_at = now()
-          WHERE id = $2
-          RETURNING *`,
+          WHERE id = $2`,
         [managerId, refundId],
       );
-      const updated = updatedRes.rows[0];
 
       await client.query(
         `INSERT INTO audit_events (
@@ -347,7 +376,7 @@ export class RefundsService {
     try {
       await client.query('BEGIN');
 
-      const rRes = await client.query<any>(
+      const rRes = await client.query<RefundRow>(
         'SELECT * FROM refunds WHERE id = $1 AND venue_id = $2 FOR UPDATE',
         [refundId, venueId],
       );
@@ -363,7 +392,7 @@ export class RefundsService {
       let intentProviderRef = refund.provider_ref;
       let providerName = 'sandbox';
       if (refund.payment_intent_id) {
-        const piRes = await client.query<any>(
+        const piRes = await client.query<RefundProviderRow>(
           'SELECT provider_ref, provider FROM payment_intents WHERE id = $1',
           [refund.payment_intent_id],
         );
@@ -393,6 +422,15 @@ export class RefundsService {
       );
       await client.query('COMMIT');
 
+      // Provider reference is required for PSP submission; fail closed if missing.
+      if (!intentProviderRef) {
+        throw new AuthHttpError(
+          HttpStatus.BAD_REQUEST,
+          'REFUND_PROVIDER_REF_MISSING',
+          'Refund cannot be submitted to PSP: missing provider reference.',
+        );
+      }
+
       // Submit to PSP outside DB transaction to prevent holding locks during network I/O
       try {
         const pspResult = await this.paymentsService.refund({
@@ -403,7 +441,7 @@ export class RefundsService {
         }, providerName);
 
         // Mark SUCCEEDED
-        const succeededRes = await pool.query<any>(
+        const succeededRes = await pool.query<RefundRow>(
           `UPDATE refunds
               SET status = 'SUCCEEDED', provider_ref = $1, processed_at = now(), updated_at = now()
             WHERE id = $2
@@ -445,12 +483,13 @@ export class RefundsService {
         );
 
         return this.mapRefundRow(succeededRes.rows[0]);
-      } catch (pspErr: any) {
-        const nextRetry = (refund.retry_count || 0) + 1;
+      } catch (pspErr: unknown) {
+        const nextRetry = Number(refund.retry_count ?? 0) + 1;
         const newStatus: RefundStatus = nextRetry >= 3 ? 'MANUAL_REVIEW' : 'FAILED_RETRYABLE';
-        const failureReason = pspErr?.message || 'PSP_REFUND_ERROR';
+        const failureReason =
+          pspErr instanceof Error && pspErr.message ? pspErr.message : 'PSP_REFUND_ERROR';
 
-        const failedRes = await pool.query<any>(
+        const failedRes = await pool.query<RefundRow>(
           `UPDATE refunds
               SET status = $1, failure_reason = $2, retry_count = $3, updated_at = now()
             WHERE id = $4
@@ -495,7 +534,7 @@ export class RefundsService {
     requestId?: string,
   ): Promise<RefundResultItem> {
     const pool = getPool();
-    const res = await pool.query<any>(
+    const res = await pool.query<{ status: RefundStatus }>(
       'SELECT status FROM refunds WHERE id = $1 AND venue_id = $2',
       [refundId, venueId],
     );
@@ -516,7 +555,7 @@ export class RefundsService {
   async listRefunds(venueId: string, filter: RefundListFilter): Promise<RefundListResult> {
     const pool = getPool();
     const conditions: string[] = ['r.venue_id = $1'];
-    const params: any[] = [venueId];
+    const params: unknown[] = [venueId];
     let pIdx = 2;
 
     if (filter.status) {
@@ -552,7 +591,10 @@ export class RefundsService {
        ORDER BY r.created_at DESC
        LIMIT ${limit} OFFSET ${offset}
     `;
-    const itemsRes = await pool.query<any>(itemsQuery, params);
+    const itemsRes = await pool.query<RefundRow & { customer_email: string | null }>(
+      itemsQuery,
+      params,
+    );
 
     const summaryQuery = `
       SELECT
@@ -568,7 +610,17 @@ export class RefundsService {
        FROM refunds r
       WHERE ${whereClause}
     `;
-    const sumRes = await pool.query<any>(summaryQuery, params);
+    const sumRes = await pool.query<{
+      total_count: string | number;
+      total_refunded_minor: string | number;
+      pending_refunds_minor: string | number;
+      count_requested: string | number;
+      count_approved: string | number;
+      count_submitted: string | number;
+      count_succeeded: string | number;
+      count_failed: string | number;
+      count_review: string | number;
+    }>(summaryQuery, params);
     const sum = sumRes.rows[0];
 
     return {
@@ -589,7 +641,7 @@ export class RefundsService {
     };
   }
 
-  private mapRefundRow(row: any): RefundResultItem {
+  private mapRefundRow(row: RefundRow): RefundResultItem {
     return {
       id: row.id,
       tenant_id: row.tenant_id,

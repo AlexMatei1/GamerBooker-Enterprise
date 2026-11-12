@@ -10,7 +10,6 @@ import type {
   RollbackLayoutDto,
   LayoutRevisionDetail,
   CustomerLayoutPreview,
-  CustomerPreviewNode,
 } from './layout-publish.types';
 
 function notFound(code: string, message: string): AuthHttpError {
@@ -25,9 +24,89 @@ function conflict(code: string, message: string, details?: Record<string, unknow
   return new AuthHttpError(HttpStatus.CONFLICT, code, message, details);
 }
 
-function toJsonbString(val: any): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Parses a jsonb column that may arrive as a string or as a decoded value. */
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  const parsed = parseJsonValue(value);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  const parsed = parseJsonValue(value);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function toJsonbString(val: unknown): string {
   if (typeof val === 'string') return val;
   return JSON.stringify(val ?? {});
+}
+
+/** Draft row as stored by the layout editor. JSON blobs may be text or decoded. */
+interface LayoutDraftRow {
+  id: string;
+  venue_id: string;
+  revision: number | string;
+  schema_version: number | string;
+  canvas: unknown;
+  rooms: unknown;
+  layers: unknown;
+  nodes: unknown;
+  metadata: unknown;
+  updated_by?: string | null;
+}
+
+/** Immutable published revision row. */
+interface LayoutRevisionRow {
+  id: string;
+  venue_id: string;
+  revision_number: number | string;
+  schema_version: number | string;
+  canvas: unknown;
+  rooms: unknown;
+  layers: unknown;
+  nodes: unknown;
+  metadata: unknown;
+  published_at: string | Date;
+  published_by: string | null;
+  change_summary: string | null;
+}
+
+/** Resource row joined with the effective hourly price. */
+interface PricedResourceRow {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  bookable: boolean;
+  room_id: string | null;
+  zone_id: string | null;
+  hourly_rate_minor: string | number | null;
+  currency: string | null;
 }
 
 @Injectable()
@@ -36,70 +115,88 @@ export class LayoutPublishService {
   // Validation Engine
   // ---------------------------------------------------------------------------
 
-  async validateDraft(venueId: string, customDraftData?: any): Promise<ValidateLayoutResult> {
+  async validateDraft(venueId: string, customDraftData?: unknown): Promise<ValidateLayoutResult> {
     const pool = getPool();
 
     // 1. Fetch draft if not provided
-    let scene = customDraftData;
-    if (!scene) {
-      const draftRes = await pool.query<any>(
+    let scene: Record<string, unknown>;
+    if (customDraftData === undefined || customDraftData === null) {
+      const draftRes = await pool.query<LayoutDraftRow>(
         'SELECT * FROM layout_drafts WHERE venue_id = $1',
         [venueId],
       );
       if (!draftRes.rowCount || draftRes.rowCount === 0) {
         throw notFound('DRAFT_NOT_FOUND', 'No layout draft exists for this venue.');
       }
-      scene = draftRes.rows[0];
+      scene = asRecord(draftRes.rows[0]);
+    } else {
+      scene = asRecord(customDraftData);
     }
 
-    const canvas = typeof scene.canvas === 'string' ? JSON.parse(scene.canvas) : (scene.canvas || {});
-    const rooms = typeof scene.rooms === 'string' ? JSON.parse(scene.rooms) : (scene.rooms || []);
-    const nodes = typeof scene.nodes === 'string' ? JSON.parse(scene.nodes) : (scene.nodes || []);
+    const canvas = asRecord(scene.canvas);
+    const rooms = asArray(scene.rooms);
+    const nodes = asArray(scene.nodes);
 
     const errors: LayoutValidationError[] = [];
     const warnings: LayoutValidationWarning[] = [];
 
     // Canvas checks
-    if (!canvas.width || canvas.width < 200) {
+    const canvasWidth = asNumber(canvas.width);
+    if (canvasWidth === null || canvasWidth < 200) {
       errors.push({ code: 'INVALID_CANVAS_WIDTH', message: 'Canvas width must be >= 200' });
     }
-    if (!canvas.height || canvas.height < 200) {
+    const canvasHeight = asNumber(canvas.height);
+    if (canvasHeight === null || canvasHeight < 200) {
       errors.push({ code: 'INVALID_CANVAS_HEIGHT', message: 'Canvas height must be >= 200' });
     }
 
     // Rooms checks
-    for (const room of rooms) {
+    for (const rawRoom of rooms) {
+      const room = asRecord(rawRoom);
+      const roomName = asString(room.name);
       if (!room.id || !room.name) {
         errors.push({ code: 'INVALID_ROOM', message: 'Rooms must specify id and name' });
       }
-      if (room.shape && (room.shape.x < 0 || room.shape.y < 0)) {
-        errors.push({ code: 'INVALID_ROOM_COORDINATES', message: `Room "${room.name}" has negative coordinates` });
+      const shape = isRecord(room.shape) ? room.shape : null;
+      if (shape) {
+        const x = asNumber(shape.x);
+        const y = asNumber(shape.y);
+        if ((x !== null && x < 0) || (y !== null && y < 0)) {
+          errors.push({
+            code: 'INVALID_ROOM_COORDINATES',
+            message: `Room "${roomName ?? ''}" has negative coordinates`,
+          });
+        }
       }
     }
 
     // Nodes checks
-    const resourceNodes = nodes.filter((n: any) => n.kind === 'RESOURCE');
+    const resourceNodes = nodes.filter((n) => asString(asRecord(n).kind) === 'RESOURCE');
     const seenResourceIds = new Set<string>();
 
-    for (const rNode of resourceNodes) {
-      if (!rNode.resource_id) {
+    for (const rawNode of resourceNodes) {
+      const rNode = asRecord(rawNode);
+      const nodeId = asString(rNode.id);
+      const resourceId = asString(rNode.resource_id);
+
+      if (!resourceId) {
         errors.push({
           code: 'RESOURCE_NODE_MISSING_ID',
-          message: `Resource node "${rNode.id}" is missing resource_id`,
-          node_id: rNode.id,
+          message: `Resource node "${nodeId ?? ''}" is missing resource_id`,
+          node_id: nodeId,
         });
         continue;
       }
 
-      if (seenResourceIds.has(rNode.resource_id)) {
+      if (seenResourceIds.has(resourceId)) {
         errors.push({
           code: 'DUPLICATE_RESOURCE_IN_SCENE',
-          message: `Resource "${rNode.resource_id}" is placed multiple times in the scene`,
-          node_id: rNode.id,
-          resource_id: rNode.resource_id,
+          message: `Resource "${resourceId}" is placed multiple times in the scene`,
+          node_id: nodeId,
+          resource_id: resourceId,
         });
       }
-      seenResourceIds.add(rNode.resource_id);
+      seenResourceIds.add(resourceId);
     }
 
     const resourceIds = Array.from(seenResourceIds);
@@ -156,7 +253,7 @@ export class LayoutPublishService {
     // Active Booking Deletion Guard:
     // Compare against currently published revision (if any). If a published resource is removed,
     // verify it has no active holds or future confirmed bookings!
-    const activeRevRes = await pool.query<{ nodes: any }>(
+    const activeRevRes = await pool.query<{ nodes: unknown }>(
       `SELECT lr.nodes
        FROM venues v
        JOIN layout_revisions lr ON lr.id = v.active_layout_revision_id
@@ -165,13 +262,13 @@ export class LayoutPublishService {
     );
 
     if (activeRevRes.rowCount && activeRevRes.rowCount > 0) {
-      const prevRawNodes = activeRevRes.rows[0].nodes;
-      const prevNodes = typeof prevRawNodes === 'string' ? JSON.parse(prevRawNodes) : prevRawNodes;
-      const prevResourceIds = (prevNodes || [])
-        .filter((n: any) => n.kind === 'RESOURCE' && n.resource_id)
-        .map((n: any) => n.resource_id as string);
+      const prevNodes = asArray(activeRevRes.rows[0].nodes);
+      const prevResourceIds = prevNodes
+        .map((n) => asRecord(n))
+        .filter((n) => asString(n.kind) === 'RESOURCE' && asString(n.resource_id) !== undefined)
+        .map((n) => asString(n.resource_id) as string);
 
-      const removedResourceIds = prevResourceIds.filter((id: string) => !seenResourceIds.has(id));
+      const removedResourceIds = prevResourceIds.filter((id) => !seenResourceIds.has(id));
 
       if (removedResourceIds.length > 0) {
         const futureClaims = await pool.query<{ resource_id: string; rname: string; count: string }>(
@@ -230,7 +327,7 @@ export class LayoutPublishService {
       const tenantId = venueRes.rows[0].tenant_id;
 
       // Lock draft
-      const draftRes = await client.query<any>(
+      const draftRes = await client.query<LayoutDraftRow>(
         'SELECT * FROM layout_drafts WHERE venue_id = $1 FOR UPDATE',
         [venueId],
       );
@@ -266,7 +363,7 @@ export class LayoutPublishService {
       const nextRevisionNumber = parseInt(maxRevRes.rows[0].next_rev, 10);
 
       // Insert immutable layout revision
-      const revRes = await client.query<any>(
+      const revRes = await client.query<LayoutRevisionRow>(
         `INSERT INTO layout_revisions (
           venue_id, revision_number, schema_version, canvas, rooms, layers, nodes, metadata,
           published_by, change_summary
@@ -368,7 +465,7 @@ export class LayoutPublishService {
       const tenantId = venueRes.rows[0].tenant_id;
 
       // Find target revision
-      const targetRevRes = await client.query<any>(
+      const targetRevRes = await client.query<LayoutRevisionRow>(
         'SELECT * FROM layout_revisions WHERE venue_id = $1 AND revision_number = $2',
         [venueId, dto.target_revision_number],
       );
@@ -398,7 +495,7 @@ export class LayoutPublishService {
       const nextRevisionNumber = parseInt(maxRevRes.rows[0].next_rev, 10);
 
       // Create NEW revision based on target revision
-      const newRevRes = await client.query<any>(
+      const newRevRes = await client.query<LayoutRevisionRow>(
         `INSERT INTO layout_revisions (
           venue_id, revision_number, schema_version, canvas, rooms, layers, nodes, metadata,
           published_by, change_summary
@@ -495,7 +592,7 @@ export class LayoutPublishService {
 
   async listRevisions(venueId: string): Promise<LayoutRevisionDetail[]> {
     const pool = getPool();
-    const res = await pool.query<any>(
+    const res = await pool.query<LayoutRevisionRow & { is_active: boolean | null }>(
       `SELECT lr.*, (v.active_layout_revision_id = lr.id) as is_active
        FROM layout_revisions lr
        JOIN venues v ON v.id = lr.venue_id
@@ -519,22 +616,22 @@ export class LayoutPublishService {
   ): Promise<CustomerLayoutPreview> {
     const pool = getPool();
 
-    let scene: any;
+    let scene: Record<string, unknown> & { revision?: unknown; revision_number?: unknown };
     let revNumber = 0;
     const source: 'DRAFT' | 'PUBLISHED' = isDraft ? 'DRAFT' : 'PUBLISHED';
 
     if (isDraft) {
-      const draftRes = await pool.query<any>(
+      const draftRes = await pool.query<LayoutDraftRow>(
         'SELECT * FROM layout_drafts WHERE venue_id = $1',
         [venueId],
       );
       if (!draftRes.rowCount || draftRes.rowCount === 0) {
         throw notFound('DRAFT_NOT_FOUND', 'No layout draft exists for this venue.');
       }
-      scene = draftRes.rows[0];
+      scene = asRecord(draftRes.rows[0]);
       revNumber = Number(scene.revision);
     } else {
-      const pubRes = await pool.query<any>(
+      const pubRes = await pool.query<LayoutRevisionRow>(
         `SELECT lr.*
          FROM venues v
          JOIN layout_revisions lr ON lr.id = v.active_layout_revision_id
@@ -544,14 +641,14 @@ export class LayoutPublishService {
       if (!pubRes.rowCount || pubRes.rowCount === 0) {
         throw notFound('NO_PUBLISHED_LAYOUT', 'This venue has no active published layout.');
       }
-      scene = pubRes.rows[0];
+      scene = asRecord(pubRes.rows[0]);
       revNumber = Number(scene.revision_number);
     }
 
-    const canvas = typeof scene.canvas === 'string' ? JSON.parse(scene.canvas) : scene.canvas;
-    const rooms = typeof scene.rooms === 'string' ? JSON.parse(scene.rooms) : scene.rooms;
-    const layers = typeof scene.layers === 'string' ? JSON.parse(scene.layers) : scene.layers;
-    const nodes = typeof scene.nodes === 'string' ? JSON.parse(scene.nodes) : scene.nodes;
+    const canvas = asRecord(scene.canvas) as CustomerLayoutPreview['canvas'];
+    const rooms = asArray(scene.rooms) as CustomerLayoutPreview['rooms'];
+    const layers = asArray(scene.layers) as CustomerLayoutPreview['layers'];
+    const nodes = asArray(scene.nodes) as Array<Record<string, unknown>>;
 
     // Time window for occupancy check
     const from = fromStr ? new Date(fromStr) : new Date();
@@ -574,12 +671,14 @@ export class LayoutPublishService {
     });
 
     // Load DB resource details
-    const resNodes = (nodes || []).filter((n: any) => n.kind === 'RESOURCE' && n.resource_id);
-    const resIds = resNodes.map((n: any) => n.resource_id);
+    const resourceNodeRecords = nodes
+      .map((n) => asRecord(n))
+      .filter((n) => n.kind === 'RESOURCE' && typeof n.resource_id === 'string');
+    const resIds = resourceNodeRecords.map((n) => n.resource_id as string);
 
-    const dbResMap = new Map<string, any>();
+    const dbResMap = new Map<string, PricedResourceRow>();
     if (resIds.length > 0) {
-      const dbRes = await pool.query<any>(
+      const dbRes = await pool.query<PricedResourceRow>(
         `SELECT r.id, r.name, r.type, r.status, r.bookable, r.zone_id,
                 COALESCE(pr.hourly_rate_minor, pz.hourly_rate_minor, pv.hourly_rate_minor, 2000) as hourly_rate_minor,
                 COALESCE(pr.currency, pz.currency, pv.currency, 'RON') as currency
@@ -598,14 +697,16 @@ export class LayoutPublishService {
     let bookedCount = 0;
     let maintenanceCount = 0;
 
-    const previewNodes: CustomerPreviewNode[] = (nodes || []).map((node: any) => {
-      if (node.kind !== 'RESOURCE' || !node.resource_id) {
+    const previewNodes: CustomerLayoutPreview['nodes'] = nodes.map((rawNode) => {
+      const node = asRecord(rawNode);
+      const resourceId = asString(node.resource_id);
+      if (asString(node.kind) !== 'RESOURCE' || !resourceId) {
         return node;
       }
 
       totalResources++;
-      const dbItem = dbResMap.get(node.resource_id);
-      const claimType = claimMap.get(node.resource_id);
+      const dbItem = dbResMap.get(resourceId);
+      const claimType = claimMap.get(resourceId);
 
       let status: 'AVAILABLE' | 'BOOKED' | 'MAINTENANCE' = 'AVAILABLE';
       if (dbItem?.status === 'MAINTENANCE' || claimType === 'MAINTENANCE') {
@@ -624,12 +725,15 @@ export class LayoutPublishService {
 
       return {
         ...node,
+        id: asString(node.id) ?? '',
+        kind: asString(node.kind) ?? 'RESOURCE',
+        layer_id: asString(node.layer_id) ?? '',
         resource: {
-          id: node.resource_id,
-          name: dbItem?.name || node.label || 'Station',
-          type: dbItem?.type || 'PC',
-          hourly_rate_minor: Number(dbItem?.hourly_rate_minor || 2000),
-          currency: dbItem?.currency || 'RON',
+          id: resourceId,
+          name: dbItem?.name ?? asString(node.label) ?? 'Station',
+          type: dbItem?.type ?? 'PC',
+          hourly_rate_minor: Number(dbItem?.hourly_rate_minor ?? 2000),
+          currency: dbItem?.currency ?? 'RON',
           status,
         },
       };
@@ -653,18 +757,20 @@ export class LayoutPublishService {
     };
   }
 
-  private mapRevisionRow(row: any, isActive: boolean): LayoutRevisionDetail {
+  private mapRevisionRow(row: LayoutRevisionRow, isActive: boolean): LayoutRevisionDetail {
+    const publishedAt =
+      row.published_at instanceof Date ? row.published_at.toISOString() : row.published_at;
     return {
       id: row.id,
       venue_id: row.venue_id,
       revision_number: Number(row.revision_number),
       schema_version: Number(row.schema_version),
-      canvas: typeof row.canvas === 'string' ? JSON.parse(row.canvas) : row.canvas,
-      rooms: typeof row.rooms === 'string' ? JSON.parse(row.rooms) : row.rooms,
-      layers: typeof row.layers === 'string' ? JSON.parse(row.layers) : row.layers,
-      nodes: typeof row.nodes === 'string' ? JSON.parse(row.nodes) : row.nodes,
-      metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
-      published_at: row.published_at instanceof Date ? row.published_at.toISOString() : row.published_at,
+      canvas: asRecord(row.canvas) as LayoutRevisionDetail['canvas'],
+      rooms: asArray(row.rooms) as LayoutRevisionDetail['rooms'],
+      layers: asArray(row.layers) as LayoutRevisionDetail['layers'],
+      nodes: asArray(row.nodes) as LayoutRevisionDetail['nodes'],
+      metadata: asRecord(row.metadata),
+      published_at: publishedAt,
       published_by: row.published_by || null,
       change_summary: row.change_summary || null,
       is_active: isActive,

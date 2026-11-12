@@ -5,7 +5,10 @@ import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Stripe signs the exact bytes it sent. Without raw-body capture Nest re-parses
+  // the JSON, so even a genuine signature could never match. The webhook handler
+  // verifies req.rawBody and refuses to fall back to a re-serialisation.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
   app.enableShutdownHooks();
 
@@ -28,7 +31,12 @@ async function bootstrap(): Promise<void> {
     // Fail fast: a NaN port would surface as an opaque listen() error.
     throw new Error(`PORT must be an integer between 1 and 65535, got "${process.env.PORT}"`);
   }
-  await app.listen(port);
+  const development = process.env.NODE_ENV === 'development';
+  const host = process.env.API_HOST ?? (development ? '127.0.0.1' : '0.0.0.0');
+  if (development && !['127.0.0.1','::1'].includes(host)) {
+    throw new Error('Development verification endpoints require a loopback API_HOST.');
+  }
+  await app.listen(port,host);
 }
 
 void bootstrap();
