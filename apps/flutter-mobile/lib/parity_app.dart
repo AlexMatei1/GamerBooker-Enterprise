@@ -4,16 +4,17 @@ import 'package:flutter/services.dart';
 import 'pass_preview.dart';
 import 'lifecycle_state.dart';
 
-const bg = Color(0xff09090b);
-const ink = Color(0xfff4f4f5);
-const orange = Color(0xff6366f1);
-const ticketWhite = Color(0xffffffff);
-const surface = Color(0xff12121a);
-const raised = Color(0xff181824);
+const bg = Color(0xff08090d);
+const ink = Color(0xfff8fafc);
+const orange = Color(0xff00f0ff);
+const ticketWhite = Color(0xff040b11);
+const surface = Color(0xff10121b);
+const raised = Color(0xff151824);
 const muted = Color(0xff94a3b8);
 const faint = Color(0xff64748b);
-const green = Color(0xff10b981);
-const line = Color(0xff27272a);
+const green = Color(0xff00ff9d);
+const line = Color(0x2600f0ff);
+const purple = Color(0xff7c3aed);
 
 class Venue {
   const Venue(this.name, this.city, this.address, this.rating, this.rate,
@@ -211,6 +212,53 @@ class _AppShellState extends State<AppShell> {
   void closeOrderDialog(){final ctx=orderDialogContext;orderDialogContext=null;if(ctx!=null&&ctx.mounted&&ModalRoute.of(ctx)?.isCurrent==true)Navigator.pop(ctx);}
   void invalidateContext(){bookingGeneration++;processing=false;closeOrderDialog();}
 
+  // Auth & Account State
+  bool loggedIn = true;
+  bool isRegistering = false;
+  bool authAcceptedTerms = false;
+  String currentUserName = 'Andrei Popescu';
+  String currentUserEmail = 'gamer.andrei@gamerbooker.ro';
+  final authEmail = TextEditingController(text: 'gamer.andrei@gamerbooker.ro');
+  final authPassword = TextEditingController(text: 'Parola123!');
+  final authName = TextEditingController(text: 'Andrei Popescu');
+  String? authError;
+
+  void handleAuth() {
+    setState(() => authError = null);
+    final email = authEmail.text.trim();
+    final passw = authPassword.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => authError = 'Introdu o adresă de email validă.');
+      return;
+    }
+    if (passw.length < 6) {
+      setState(() => authError = 'Parola trebuie să aibă cel puțin 6 caractere.');
+      return;
+    }
+    if (isRegistering && !authAcceptedTerms) {
+      setState(() => authError = 'Trebuie să accepți termenii de utilizare.');
+      return;
+    }
+    setState(() {
+      loggedIn = true;
+      currentUserEmail = email;
+      if (isRegistering && authName.text.trim().isNotEmpty) {
+        currentUserName = authName.text.trim();
+      }
+    });
+  }
+
+  void demoLogin() {
+    setState(() {
+      loggedIn = true;
+      currentUserName = 'Andrei Popescu';
+      currentUserEmail = 'gamer.andrei@gamerbooker.ro';
+      authEmail.text = 'gamer.andrei@gamerbooker.ro';
+      authPassword.text = 'Parola123!';
+      authError = null;
+    });
+  }
+
   DemoPass? pass;
   final preview = PassPreview();
   List<Map<String,dynamic>> savedPasses = [];
@@ -322,9 +370,11 @@ class _AppShellState extends State<AppShell> {
         barState.reset();
         pass = null;
         showPassList = true;
-        tab = 0;
+        tab = 4;
         checkout = false;
         islandOpen = false;
+        loggedIn = false;
+        authError = null;
       });
 
   @override
@@ -432,11 +482,35 @@ class _AppShellState extends State<AppShell> {
       ]));
 
   Widget bottomNav() {
-    final selected = tab==4?2:(tab==2||tab==3?1:0);
-    return NavigationBar(selectedIndex:selected,onDestinationSelected:(i)=>go([0,2,4][i]),destinations:const [
-      NavigationDestination(icon:Icon(Icons.explore_outlined),label:'Explorează'),
-      NavigationDestination(icon:Icon(Icons.confirmation_number_outlined),label:'Permise'),
-      NavigationDestination(icon:Icon(Icons.person_outline),label:'Cont')]);
+    final selected = tab == 4 ? 3 : (tab == 3 ? 2 : (tab == 2 ? 1 : 0));
+    return NavigationBar(
+      selectedIndex: selected,
+      backgroundColor: surface,
+      indicatorColor: orange.withValues(alpha: 0.2),
+      onDestinationSelected: (i) => go([0, 2, 3, 4][i]),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.sports_esports_outlined),
+          selectedIcon: Icon(Icons.sports_esports, color: orange),
+          label: 'Săli & PC',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.qr_code_2_outlined),
+          selectedIcon: Icon(Icons.qr_code_2, color: orange),
+          label: 'Bilet QR',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.local_bar_outlined),
+          selectedIcon: Icon(Icons.local_bar, color: orange),
+          label: 'Bar & Snacks',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          selectedIcon: Icon(Icons.person, color: orange),
+          label: 'Contul meu',
+        ),
+      ],
+    );
   }
 
   Widget explore() {
@@ -1214,57 +1288,215 @@ class _AppShellState extends State<AppShell> {
 
   Widget account() =>
       ListView(padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
-        const Header('Datele tale, la îndemână', 'Contul meu'),
-        const SizedBox(height: 26),
-        const Row(children: [
-          CircleAvatar(
-              radius: 28,
-              backgroundColor: raised,
-              child: Text('A',
-                  style: TextStyle(
-                      fontSize: 28, color: ink, fontWeight: FontWeight.w700))),
-          SizedBox(width: 14),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text('Alex Miller',
-                    style:
-                        TextStyle(fontSize: 23, fontWeight: FontWeight.w700)),
-                Text('alex.miller@example.test',
-                    style: TextStyle(fontSize: 13, color: muted)),
-                Text('Profil GamerBooker',
-                    style: TextStyle(fontSize: 12, color: muted))
-              ]))
-        ]),
-        const SizedBox(height: 30),
-        accountEntry(Icons.calendar_today_outlined, 'Rezervările mele',
-            'Permise și istoricul sesiunilor', () => go(2)),
-        accountEntry(
-            Icons.receipt_long_outlined,
-            'Plăți și documente',
-            'Istoric rezervări & plăți',
-            () => infoDialog('Plăți și documente',
-                'Vezi detaliile și bonurile fiscale emise pentru rezervările tale.')),
-        accountEntry(
-            Icons.settings_outlined,
-            'Setări',
-            'Preferințe și notificări',
-            () => infoDialog('Setări',
-                'Setări de securitate, confidențialitate și preferințe cont.')),
-        accountEntry(Icons.shield_outlined, 'Confidențialitate',
-            'Date personale și opțiuni de cont', deleteDialog),
-        accountEntry(
-            Icons.help_outline,
-            'Ajutor și suport',
-            'Întrebări despre rezervări și locații',
-            () => infoDialog('Ajutor și suport',
-                'Asistență clienți și detalii despre regulamentul sălii.')),
-        const SizedBox(height: 26),
-        secondary('Deconectare cont', localLogout),
-        const SizedBox(height: 16),
-        const Text('Te poți reconecta oricând cu datele tale de cont.',
-            style: TextStyle(fontSize: 13, color: muted, height: 1.6))
+        Header(
+          loggedIn ? 'Datele tale de gamer' : 'Acces în arenă',
+          loggedIn ? 'Profilul meu' : 'Autentificare',
+        ),
+        const SizedBox(height: 24),
+        if (!loggedIn) ...[
+          // Toggle between Login and Register
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: box(surface, radius: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() {
+                      isRegistering = false;
+                      authError = null;
+                    }),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: isRegistering
+                          ? null
+                          : box(orange, radius: 10, border: orange),
+                      child: Text(
+                        'Autentificare',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: isRegistering ? muted : const Color(0xff040b11),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() {
+                      isRegistering = true;
+                      authError = null;
+                    }),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: isRegistering
+                          ? box(orange, radius: 10, border: orange)
+                          : null,
+                      child: Text(
+                        'Creează cont nou',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: isRegistering ? const Color(0xff040b11) : muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (isRegistering) ...[
+            TextField(
+              controller: authName,
+              style: const TextStyle(color: ink),
+              decoration: InputDecoration(
+                labelText: 'Nume complet',
+                prefixIcon: const Icon(Icons.person_outline, color: muted),
+                filled: true,
+                fillColor: surface,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: orange)),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          TextField(
+            controller: authEmail,
+            keyboardType: TextInputType.emailAddress,
+            style: const TextStyle(color: ink),
+            decoration: InputDecoration(
+              labelText: 'Adresă Email',
+              prefixIcon: const Icon(Icons.mail_outline, color: muted),
+              filled: true,
+              fillColor: surface,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: orange)),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: authPassword,
+            obscureText: true,
+            style: const TextStyle(color: ink),
+            decoration: InputDecoration(
+              labelText: 'Parolă',
+              prefixIcon: const Icon(Icons.lock_outline, color: muted),
+              filled: true,
+              fillColor: surface,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: orange)),
+            ),
+          ),
+          if (isRegistering) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Checkbox(
+                  value: authAcceptedTerms,
+                  activeColor: orange,
+                  checkColor: const Color(0xff040b11),
+                  onChanged: (v) => setState(() => authAcceptedTerms = v ?? false),
+                ),
+                const Expanded(
+                  child: Text(
+                    'Accept termenii de utilizare și regulamentul sălilor',
+                    style: TextStyle(fontSize: 12, color: muted),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (authError != null) ...[
+            const SizedBox(height: 10),
+            Text(authError!, style: const TextStyle(color: Color(0xffff0055), fontSize: 13)),
+          ],
+          const SizedBox(height: 20),
+          primary(isRegistering ? 'Creează cont de Gamer' : 'Autentificare în arenă', handleAuth),
+          const SizedBox(height: 12),
+          secondary('⚡ 1-Click Demo Login (Gamer Andrei)', demoLogin),
+        ] else ...[
+          // Logged In view with Esports banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: box(surface, radius: 16, border: line),
+            child: Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: raised,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: orange, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: orange.withValues(alpha: 0.3), blurRadius: 10, spreadRadius: 1),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      currentUserName.isNotEmpty ? currentUserName[0].toUpperCase() : 'G',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: ink),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(currentUserName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: orange.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: orange.withValues(alpha: 0.4)),
+                            ),
+                            child: const Text('VIP ELITE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: orange)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(currentUserEmail, style: const TextStyle(fontSize: 13, color: muted)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Quick Gaming Stats
+          Row(
+            children: [
+              Expanded(child: stat('Ore Jucate', '28h', 'Luna curentă')),
+              const SizedBox(width: 8),
+              Expanded(child: stat('Rezervări', '6', 'Toate confirmate')),
+              const SizedBox(width: 8),
+              Expanded(child: stat('Puncte XP', '1,420', 'Nivel 14')),
+            ],
+          ),
+          const SizedBox(height: 24),
+          accountEntry(Icons.calendar_today_outlined, 'Rezervările mele', 'Permise și istoricul sesiunilor', () => go(2)),
+          accountEntry(Icons.receipt_long_outlined, 'Plăți și portofel', 'Istoric bonuri fiscale & carduri', () => infoDialog('Plăți și portofel', 'Vezi plățile și bonurile fiscale emise pentru rezervările tale.')),
+          accountEntry(Icons.settings_outlined, 'Setări arenă', 'Preferințe hardware și notificări', () => infoDialog('Setări', 'Preferințe tastatură, mouse DPI și notificări.')),
+          accountEntry(Icons.shield_outlined, 'Confidențialitate', 'Securitate cont și date personale', deleteDialog),
+          accountEntry(Icons.help_outline, 'Ajutor și suport', 'Asistență rapidă în arenă', () => infoDialog('Ajutor și suport', 'Asistență clienți și detalii despre regulamentul sălii.')),
+          const SizedBox(height: 24),
+          secondary('Deconectare cont', localLogout),
+        ],
       ]);
   void infoDialog(String title, String content) => showDialog<void>(
       context: context,

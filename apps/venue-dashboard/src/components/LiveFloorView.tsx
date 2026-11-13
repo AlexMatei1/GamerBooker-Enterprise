@@ -370,7 +370,7 @@ export const LiveFloorView: React.FC<Props> = ({
               <button onClick={() => setSelected(s)}>Vezi sesiunea →</button>
             </article>
           ))}
-          {!attention.length && <p>Nicio alertă în setul demo.</p>
+          {!attention.length && <p>Nicio alertă în setul demo.</p>}
         </aside>
       </div>
       {selected && (
